@@ -94,6 +94,37 @@ describe("measurement source stack", () => {
     expect(calibrated.evidence.map((item) => item.label)).toContain("Public footprint cross-check");
   });
 
+  it("carries the Solar raster preview into the draft as visual evidence", () => {
+    const calibrated = calibrateDraftWithSources(baseDraft, {
+      solarDataLayers: {
+        status: "used",
+        imageryQuality: "HIGH",
+        imageryDate: "2025-02-12",
+        rgbUrl: "https://solar.example/rgb.tif",
+        maskUrl: "https://solar.example/mask.tif",
+        rasterPreview: {
+          source: "google_solar_rgb_mask",
+          imageWidth: 8,
+          imageHeight: 6,
+          imageDataUrl: "data:image/png;base64,preview",
+          roofPixels: 22,
+          maskOpacity: 0.44,
+          detail: "Rendered from Google Solar RGB imagery with the roof mask tinted for manager review.",
+        },
+      },
+    });
+
+    expect(calibrated.solarRasterPreview?.imageDataUrl).toMatch(/^data:image\/png;base64,/);
+    expect(calibrated.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "Google Solar imagery layers",
+          detail: expect.stringContaining("raster preview"),
+        }),
+      ]),
+    );
+  });
+
   it("reports provider readiness without exposing API key values", () => {
     const readiness = buildMeasurementSourceReadiness({
       googleMapsApiKey: "test-google-maps-key",

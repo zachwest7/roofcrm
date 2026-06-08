@@ -121,6 +121,15 @@ describe("google solar source adapter", () => {
         ],
         detail: "Auto outline extracted from Google Solar roof mask pixels. Manager review is still required.",
       }),
+      rasterPreviewFetcher: async () => ({
+        source: "google_solar_rgb_mask",
+        imageWidth: 8,
+        imageHeight: 6,
+        imageDataUrl: "data:image/png;base64,preview",
+        roofPixels: 22,
+        maskOpacity: 0.44,
+        detail: "Rendered from Google Solar RGB imagery with the roof mask tinted for manager review.",
+      }),
     });
 
     expect(calls).toHaveLength(2);
@@ -137,6 +146,7 @@ describe("google solar source adapter", () => {
     expect(result.signals.solarDataLayers?.status).toBe("used");
     expect(result.signals.solarDataLayers?.rgbUrl).toBe("https://solar.example/rgb.tif");
     expect(result.signals.solarDataLayers?.autoRoofOutline?.polygons[0].points).toContainEqual({ x: 7, y: 3 });
+    expect(result.signals.solarDataLayers?.rasterPreview?.imageDataUrl).toMatch(/^data:image\/png;base64,/);
     expect(result.payload.buildingInsights).toEqual(buildingInsightsResponse);
   });
 

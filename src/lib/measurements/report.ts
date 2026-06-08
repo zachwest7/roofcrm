@@ -5,6 +5,7 @@ import type {
   RoofSegmentMeasurement,
 } from "./draft-provider";
 import type { AutoRoofOutline } from "./solar-mask-outline";
+import type { SolarRasterPreview } from "./solar-raster-preview";
 
 export type MeasurementReportInput = {
   propertyAddress: string;
@@ -22,6 +23,7 @@ export type MeasurementReportInput = {
   accuracyBand: AccuracyBand;
   roofSegments: RoofSegmentMeasurement[];
   autoRoofOutline?: AutoRoofOutline;
+  solarRasterPreview?: SolarRasterPreview;
   generatedAt: string;
 };
 
@@ -65,6 +67,7 @@ export type MeasurementReport = {
   facetRows: MeasurementReportFacet[];
   sourceRows: MeasurementReportSourceRow[];
   autoRoofOutline?: AutoRoofOutline;
+  solarRasterPreview?: SolarRasterPreview;
   notes: string[];
   reviewer: {
     name: string;
@@ -183,6 +186,7 @@ export function buildMeasurementReport(input: MeasurementReportInput): Measureme
     facetRows,
     sourceRows: buildSourceRows(input, totalRoofAreaSqft, roofSquares, facetRows, measurements),
     autoRoofOutline: input.autoRoofOutline,
+    solarRasterPreview: input.solarRasterPreview,
     notes: [
       "Measurements are rounded for report readability. Quote inputs should be reviewed against source imagery before ordering materials.",
       input.customerNotes ? `Customer notes: ${input.customerNotes}` : "Customer notes: none.",
@@ -348,6 +352,16 @@ function buildSourceRows(
     });
   }
 
+  if (input.solarRasterPreview) {
+    rows.push({
+      label: "Solar imagery overlay",
+      value: formatSolarRasterPreviewValue(input.solarRasterPreview),
+      source: "Google Solar RGB + roof mask",
+      status: "provider_estimate",
+      detail: "Rendered Solar RGB imagery with the roof mask tinted underneath the proposed outline for visual review.",
+    });
+  }
+
   rows.push(
     {
       label: "Length totals",
@@ -366,6 +380,10 @@ function buildSourceRows(
   );
 
   return rows;
+}
+
+function formatSolarRasterPreviewValue(preview: SolarRasterPreview) {
+  return `${preview.imageWidth} x ${preview.imageHeight} px / ${preview.roofPixels.toLocaleString()} roof pixels`;
 }
 
 function formatAutoOutlineValue(outline: AutoRoofOutline) {

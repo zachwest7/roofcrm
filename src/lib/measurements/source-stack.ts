@@ -7,6 +7,7 @@ import type {
   RoofSegmentMeasurement,
 } from "./draft-provider";
 import type { AutoRoofOutline } from "./solar-mask-outline";
+import type { SolarRasterPreview } from "./solar-raster-preview";
 
 const SQUARE_METERS_TO_SQUARES = 10.76391041671 / 100;
 const SOURCE_DISAGREEMENT_THRESHOLD_PERCENT = 18;
@@ -77,6 +78,7 @@ export type SolarDataLayersSignal = {
   maskUrl?: string;
   dsmUrl?: string;
   autoRoofOutline?: AutoRoofOutline;
+  rasterPreview?: SolarRasterPreview;
 };
 
 export type MeasurementSourceSignals = {
@@ -258,17 +260,16 @@ export function calibrateDraftWithSources(
         dsmUrl: signals.solarDataLayers.dsmUrl,
       },
       autoRoofOutline: signals.solarDataLayers.autoRoofOutline,
+      solarRasterPreview: signals.solarDataLayers.rasterPreview,
     };
     evidence.push({
       sourceType: "paid_api",
       label: "Google Solar imagery layers",
-      detail: signals.solarDataLayers.autoRoofOutline
-        ? "Solar RGB, roof mask, DSM layers, and an auto roof outline proposal were generated for reviewer evidence."
-        : "Solar RGB, roof mask, and DSM layer URLs were returned for reviewer evidence.",
-      confidenceImpact: signals.solarDataLayers.autoRoofOutline ? 8 : 4,
+      detail: formatSolarDataLayersEvidenceDetail(signals.solarDataLayers),
+      confidenceImpact: signals.solarDataLayers.autoRoofOutline || signals.solarDataLayers.rasterPreview ? 8 : 4,
     });
 
-    if (signals.solarDataLayers.autoRoofOutline) {
+    if (signals.solarDataLayers.autoRoofOutline || signals.solarDataLayers.rasterPreview) {
       confidenceBonus += 6;
     }
   }
@@ -355,6 +356,40 @@ function getSolarRoofSquares(signal?: GoogleSolarSignal): number | undefined {
   const areaMeters2 = signal.roofSegmentStats.reduce((total, segment) => total + segment.areaMeters2, 0);
 
   return squareMetersToRoofSquares(areaMeters2);
+}
+
+function formatSolarDataLayersEvidenceDetail(signal: SolarDataLayersSignal) {
+  const artifacts = ["Solar RGB"];
+
+  if (signal.maskUrl) {
+    artifacts.push("roof mask");
+  }
+
+  if (signal.dsmUrl) {
+    artifacts.push("DSM layer");
+  }
+
+  if (signal.autoRoofOutline) {
+    artifacts.push("auto roof outline proposal");
+  }
+
+  if (signal.rasterPreview) {
+    artifacts.push("raster preview");
+  }
+
+  return `${formatList(artifacts)} generated for reviewer evidence.`;
+}
+
+function formatList(items: string[]) {
+  if (items.length <= 1) {
+    return items[0] ?? "Solar imagery layers";
+  }
+
+  if (items.length === 2) {
+    return `${items[0]} and ${items[1]}`;
+  }
+
+  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
 }
 
 function getSolarPitchClass(signal?: GoogleSolarSignal): PitchClass | undefined {

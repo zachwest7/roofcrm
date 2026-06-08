@@ -65,6 +65,7 @@ export function MeasurementReportView({
         accuracyBand: snapshot.draft.accuracyBand,
         roofSegments: snapshot.draft.roofSegments,
         autoRoofOutline: snapshot.draft.autoRoofOutline,
+        solarRasterPreview: snapshot.draft.solarRasterPreview,
         generatedAt: snapshot.approval?.approvedAt ?? snapshot.draft.generatedAt,
       }),
     [approvedOrDraft, snapshot],
@@ -372,6 +373,7 @@ function AutoRoofOutlineDiagram({
   variant: "area" | "cover" | "length" | "pitch" | "summary";
 }) {
   const outline = report.autoRoofOutline;
+  const rasterPreview = getCompatibleRasterPreview(report);
 
   if (!outline) {
     return null;
@@ -384,12 +386,22 @@ function AutoRoofOutlineDiagram({
       role="img"
       aria-label="Auto roof outline diagram"
     >
-      <rect width={outline.imageWidth} height={outline.imageHeight} className="fill-slate-50" />
+      {rasterPreview ? (
+        <image
+          href={rasterPreview.imageDataUrl}
+          width={outline.imageWidth}
+          height={outline.imageHeight}
+          preserveAspectRatio="none"
+        />
+      ) : (
+        <rect width={outline.imageWidth} height={outline.imageHeight} className="fill-slate-50" />
+      )}
+      {rasterPreview ? <rect width={outline.imageWidth} height={outline.imageHeight} className="fill-black/10" /> : null}
       {outline.polygons.map((polygon) => (
         <g key={polygon.id}>
           <polygon
             points={polygon.points.map((point) => `${point.x},${point.y}`).join(" ")}
-            className="fill-sky-100 stroke-sky-600 stroke-[1.5]"
+            className={rasterPreview ? "fill-sky-300/20 stroke-white stroke-[1.8]" : "fill-sky-100 stroke-sky-600 stroke-[1.5]"}
             vectorEffect="non-scaling-stroke"
           />
           {variant === "length" ? (
@@ -404,17 +416,32 @@ function AutoRoofOutlineDiagram({
             y={getPolygonCentroid(polygon.points).y}
             textAnchor="middle"
             dominantBaseline="middle"
-            className="fill-slate-900 text-[4px] font-semibold"
+            className={rasterPreview ? "fill-white text-[4px] font-semibold" : "fill-slate-900 text-[4px] font-semibold"}
           >
             {variant === "pitch" ? formatPitch(report.cover.predominantPitch) : `${report.cover.totalRoofAreaSqft.toLocaleString()} sqft`}
           </text>
         </g>
       ))}
-      <text x="3" y={outline.imageHeight - 4} className="fill-slate-500 text-[3px]">
-        Auto outline proposal from Google Solar roof mask. Review required.
+      <text x="3" y={outline.imageHeight - 4} className={rasterPreview ? "fill-white text-[3px]" : "fill-slate-500 text-[3px]"}>
+        {rasterPreview ? "Solar RGB + mask overlay. Auto outline proposal. Review required." : "Auto outline proposal from Google Solar roof mask. Review required."}
       </text>
     </svg>
   );
+}
+
+function getCompatibleRasterPreview(report: MeasurementReport) {
+  const outline = report.autoRoofOutline;
+  const preview = report.solarRasterPreview;
+
+  if (!outline || !preview) {
+    return null;
+  }
+
+  if (preview.imageWidth !== outline.imageWidth || preview.imageHeight !== outline.imageHeight) {
+    return null;
+  }
+
+  return preview;
 }
 
 function SegmentBoxDiagram({

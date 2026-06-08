@@ -1,5 +1,6 @@
 import { calibrateDraftWithSources, type LatLng, type LatLngBox, type MeasurementSourceSignals } from "./source-stack";
 import type { AutoRoofOutline } from "./solar-mask-outline";
+import type { SolarRasterPreview } from "./solar-raster-preview";
 
 export type MeasurementMode = "pre_quote_screening" | "quote_ready_review";
 
@@ -59,6 +60,7 @@ export type DraftMeasurement = {
   roofSegments: RoofSegmentMeasurement[];
   imageryLayers?: RoofImageryLayers;
   autoRoofOutline?: AutoRoofOutline;
+  solarRasterPreview?: SolarRasterPreview;
 };
 
 export type MeasurementEvidence = {

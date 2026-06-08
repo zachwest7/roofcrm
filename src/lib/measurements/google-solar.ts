@@ -1,5 +1,6 @@
 import type { MeasurementSourceSignals } from "./source-stack";
 import { fetchGoogleSolarMaskOutline, type AutoRoofOutline } from "./solar-mask-outline";
+import { fetchGoogleSolarRasterPreview, type SolarRasterPreview } from "./solar-raster-preview";
 
 type LatLng = {
   latitude?: number;
@@ -28,6 +29,13 @@ type GoogleSolarRoofSegment = {
   azimuthDegrees?: number;
   planeHeightAtCenterMeters?: number;
 };
+
+type SolarRasterPreviewFetcher = (input: {
+  rgbUrl?: string;
+  maskUrl?: string;
+  apiKey?: string;
+  fetchFn?: typeof fetch;
+}) => Promise<SolarRasterPreview | null>;
 
 export type GoogleSolarBuildingInsightsResponse = {
   name?: string;
@@ -119,6 +127,7 @@ export async function fetchGoogleSolarSignals(input: {
     pixelSizeMeters?: number;
     fetchFn?: typeof fetch;
   }) => Promise<AutoRoofOutline | null>;
+  rasterPreviewFetcher?: SolarRasterPreviewFetcher;
 }): Promise<GoogleSolarFetchResult> {
   const apiKey = input.apiKey?.trim();
 
@@ -203,6 +212,14 @@ export async function fetchGoogleSolarSignals(input: {
         fetchFn,
       })
     : null;
+  const rasterPreview = dataLayers?.rgbUrl
+    ? await safeFetchSolarRasterPreview(input.rasterPreviewFetcher ?? fetchGoogleSolarRasterPreview, {
+        rgbUrl: dataLayers.rgbUrl,
+        maskUrl: dataLayers.maskUrl,
+        apiKey,
+        fetchFn,
+      })
+    : null;
 
   return {
     signals: {
@@ -224,6 +241,7 @@ export async function fetchGoogleSolarSignals(input: {
             maskUrl: dataLayers.maskUrl,
             dsmUrl: dataLayers.dsmUrl,
             autoRoofOutline: autoRoofOutline ?? undefined,
+            rasterPreview: rasterPreview ?? undefined,
           }
         : { status: "unavailable" },
     },
@@ -233,6 +251,22 @@ export async function fetchGoogleSolarSignals(input: {
     },
     detail: `Google Solar returned ${roofSegmentStats.length} roof segment(s).`,
   };
+}
+
+async function safeFetchSolarRasterPreview(
+  rasterPreviewFetcher: SolarRasterPreviewFetcher,
+  input: {
+    rgbUrl?: string;
+    maskUrl?: string;
+    apiKey?: string;
+    fetchFn?: typeof fetch;
+  },
+) {
+  try {
+    return await rasterPreviewFetcher(input);
+  } catch {
+    return null;
+  }
 }
 
 async function fetchSolarDataLayers(input: {

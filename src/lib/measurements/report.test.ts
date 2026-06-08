@@ -85,6 +85,15 @@ describe("measurement report", () => {
         ],
         detail: "Auto outline extracted from Google Solar roof mask pixels. Manager review is still required.",
       },
+      solarRasterPreview: {
+        source: "google_solar_rgb_mask",
+        imageWidth: 8,
+        imageHeight: 6,
+        imageDataUrl: "data:image/png;base64,preview",
+        roofPixels: 22,
+        maskOpacity: 0.44,
+        detail: "Rendered from Google Solar RGB imagery with the roof mask tinted for manager review.",
+      },
       generatedAt: "2026-06-07T20:15:00.000Z",
     });
 
@@ -108,6 +117,11 @@ describe("measurement report", () => {
           status: "proposed",
           value: "1 polygon / 15 sqft mask area",
         }),
+        expect.objectContaining({
+          label: "Solar imagery overlay",
+          status: "provider_estimate",
+          value: "8 x 6 px / 22 roof pixels",
+        }),
       ]),
     );
     expect(report.measurements.hipsAndRidgesFt).toBeGreaterThan(120);
@@ -122,6 +136,7 @@ describe("measurement report", () => {
       ne: { latitude: 26.3505, longitude: -80.1195 },
     });
     expect(report.autoRoofOutline?.polygons[0].points).toContainEqual({ x: 7, y: 3 });
+    expect(report.solarRasterPreview?.imageDataUrl).toMatch(/^data:image\/png;base64,/);
     expect(report.pitchRows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ pitch: "medium", squares: 28.4, areaSqft: 2840 }),
