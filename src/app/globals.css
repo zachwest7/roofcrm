@@ -128,3 +128,29 @@
     @apply font-sans;
   }
 }
+
+.pac-container {
+  z-index: 50;
+  margin-top: 0.25rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 45px rgb(15 23 42 / 14%);
+  font-family: var(--font-geist-sans), Arial, sans-serif;
+}
+
+.pac-item {
+  padding: 0.45rem 0.65rem;
+  color: rgb(71 85 105);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.pac-item:hover {
+  background: rgb(248 250 252);
+}
+
+.pac-item-query {
+  color: rgb(15 23 42);
+  font-size: 0.875rem;
+}

@@ -53,6 +53,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
+import { AddressAutocompleteInput } from "./address-autocomplete-input";
+
 const DEFAULT_INTAKE: PropertyIntake = {
   address: "123 Cypress Point Dr, Boca Raton, FL",
   customerNotes: "Homeowner asked for a pre-quote range before scheduling inspection.",
@@ -199,7 +201,7 @@ export function MeasurementWorkspace({
           </CardHeader>
           <CardContent className="space-y-4">
             <Field label="Address">
-              <Input value={intake.address} onChange={(event) => updateIntake("address", event.target.value)} />
+              <AddressAutocompleteInput value={intake.address} onValueChange={(value) => updateIntake("address", value)} />
             </Field>
 
             <Field label="Mode">
