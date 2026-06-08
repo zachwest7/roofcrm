@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   Database,
   FileDown,
+  FileText,
   History,
   MapPinned,
   Search,
@@ -18,12 +19,20 @@ import {
 import { useMemo, useState, useTransition } from "react";
 
 import { approveMeasurement, createPropertyWithDraft } from "@/app/actions";
-import { generateDraftMeasurement, type ComplexityClass, type PitchClass } from "@/lib/measurements/draft-provider";
+import {
+  generateDraftMeasurement,
+  type ComplexityClass,
+  type PitchClass,
+  type RoofSegmentMeasurement,
+} from "@/lib/measurements/draft-provider";
 import {
   buildSourceSignalsFromPropertyMatch,
   createTypedOnlyPropertyMatch,
   type PropertyMatch,
 } from "@/lib/measurements/property-match";
+import {
+  buildGoogleSatelliteRoofPreviewUrl,
+} from "@/lib/measurements/roof-preview-url";
 import type { MeasurementSourceReadiness } from "@/lib/measurements/source-stack";
 import { formatApprovedMeasurementSummary } from "@/lib/measurements/summary";
 import type {
@@ -31,6 +40,7 @@ import type {
   PropertyIntake,
   WorkflowApproval,
   WorkflowAuditEvent,
+  WorkflowDraft,
   WorkflowSnapshot,
 } from "@/lib/workflow/types";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +70,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
 import { AddressAutocompleteInput } from "./address-autocomplete-input";
+import { MeasurementReportView } from "./measurement-report";
+
+const googleSatellitePreviewKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY?.trim();
 
 const DEFAULT_INTAKE: PropertyIntake = {
   address: "123 Cypress Point Dr, Boca Raton, FL",
@@ -91,7 +104,7 @@ export function MeasurementWorkspace({
   const [approvalDraft, setApprovalDraft] = useState(() => createApprovalDraft(snapshot));
   const [isPending, startTransition] = useTransition();
 
-  const facets = useMemo(() => buildFacetRows(snapshot.draft.roofSquares), [snapshot.draft.roofSquares]);
+  const facets = useMemo(() => buildFacetRows(snapshot.draft), [snapshot.draft]);
   const approved = Boolean(snapshot.approval);
 
   function updateIntake<T extends keyof PropertyIntake>(key: T, value: PropertyIntake[T]) {
@@ -290,7 +303,7 @@ export function MeasurementWorkspace({
         </Card>
 
         <Tabs defaultValue="review" className="min-w-0">
-          <TabsList className="grid w-full grid-cols-3 bg-white">
+          <TabsList className="grid w-full grid-cols-4 bg-white">
             <TabsTrigger value="review" className="gap-2">
               <Ruler className="size-4" />
               Review
@@ -302,6 +315,10 @@ export function MeasurementWorkspace({
             <TabsTrigger value="history" className="gap-2">
               <History className="size-4" />
               History
+            </TabsTrigger>
+            <TabsTrigger value="report" className="gap-2">
+              <FileText className="size-4" />
+              Report
             </TabsTrigger>
           </TabsList>
 
@@ -318,20 +335,7 @@ export function MeasurementWorkspace({
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4 lg:grid-cols-[1fr_300px]">
-                  <div className="overflow-hidden rounded-lg border bg-slate-950 p-4 text-white">
-                    <div className="mb-3 flex items-center justify-between text-xs text-slate-300">
-                      <span>Address-only map placeholder</span>
-                      <span>{snapshot.draft.provider}</span>
-                    </div>
-                    <div className="relative h-72 rounded-md bg-[linear-gradient(135deg,#1e293b_25%,#334155_25%,#334155_50%,#1e293b_50%,#1e293b_75%,#334155_75%,#334155_100%)] bg-[length:32px_32px]">
-                      <div className="absolute left-[18%] top-[24%] h-24 w-44 rotate-[-8deg] rounded border border-sky-200/70 bg-sky-400/20" />
-                      <div className="absolute left-[34%] top-[37%] h-28 w-52 rotate-[11deg] rounded border border-lime-200/70 bg-lime-400/20" />
-                      <div className="absolute left-[52%] top-[22%] h-20 w-28 rotate-[18deg] rounded border border-amber-200/70 bg-amber-400/20" />
-                      <div className="absolute bottom-4 left-4 rounded bg-black/40 px-2 py-1 text-xs text-slate-200">
-                        Facets require visual confirmation
-                      </div>
-                    </div>
-                  </div>
+                  <RoofPreviewPanel snapshot={snapshot} facets={facets} />
 
                   <div className="space-y-3">
                     <div className="rounded-lg border bg-slate-50 p-3">
@@ -351,6 +355,22 @@ export function MeasurementWorkspace({
                         />
                       </div>
                     </div>
+
+                    {snapshot.draft.autoRoofOutline ? (
+                      <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-medium text-emerald-950">Auto roof outline</p>
+                          <Badge variant="outline" className="border-emerald-300 bg-white text-emerald-900">
+                            {snapshot.draft.autoRoofOutline.confidenceScore}%
+                          </Badge>
+                        </div>
+                        <p className="mt-2 text-xs leading-5 text-emerald-900">{snapshot.draft.autoRoofOutline.detail}</p>
+                        <div className="mt-2 text-xs text-emerald-800">
+                          {snapshot.draft.autoRoofOutline.polygons.length} polygon proposal from{" "}
+                          {snapshot.draft.autoRoofOutline.areaPixels.toLocaleString()} mask pixels.
+                        </div>
+                      </div>
+                    ) : null}
 
                     {snapshot.draft.evidence.map((item) => (
                       <div key={item.label} className="rounded-lg border bg-slate-50 p-3">
@@ -427,7 +447,11 @@ export function MeasurementWorkspace({
                   <Ruler className="size-4 text-sky-700" />
                   Draft Measurement
                 </CardTitle>
-                <CardDescription>Surface area split before manager correction.</CardDescription>
+                <CardDescription>
+                  {snapshot.draft.roofSegments.length
+                    ? "Solar roof segment area before manager correction."
+                    : "Surface area split before manager correction."}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
@@ -648,6 +672,10 @@ export function MeasurementWorkspace({
               </CardContent>
             </Card>
           </TabsContent>
+
+          <TabsContent value="report" className="mt-4">
+            <MeasurementReportView snapshot={snapshot} approvalDraft={approvalDraft} />
+          </TabsContent>
         </Tabs>
       </main>
     </div>
@@ -783,6 +811,55 @@ function getPropertyMatchDisplay(match?: PropertyMatch): {
   };
 }
 
+function RoofPreviewPanel({ snapshot, facets }: { snapshot: WorkflowSnapshot; facets: FacetRow[] }) {
+  const imageUrl = useMemo(
+    () =>
+      buildGoogleSatelliteRoofPreviewUrl({
+        apiKey: googleSatellitePreviewKey,
+        propertyMatch: snapshot.property.propertyMatch,
+        fallbackAddress: snapshot.property.address,
+      }),
+    [snapshot.property.address, snapshot.property.propertyMatch],
+  );
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  const hasSatelliteImage = Boolean(imageUrl && failedImageUrl !== imageUrl);
+  const matchStatus = getPropertyMatchDisplay(snapshot.property.propertyMatch).label;
+
+  return (
+    <div className="overflow-hidden rounded-lg border bg-slate-950 p-4 text-white">
+      <div className="mb-3 flex items-center justify-between gap-3 text-xs text-slate-300">
+        <span>{hasSatelliteImage ? "Satellite roof preview" : "Satellite image unavailable"}</span>
+        <span>{matchStatus}</span>
+      </div>
+      <div className="relative aspect-[32/21] overflow-hidden rounded-md border border-white/10 bg-[linear-gradient(135deg,#1e293b_25%,#334155_25%,#334155_50%,#1e293b_50%,#1e293b_75%,#334155_75%,#334155_100%)] bg-[length:32px_32px]">
+        {imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={imageUrl}
+            alt={`Satellite preview for ${snapshot.property.address}`}
+            className="absolute inset-0 h-full w-full object-cover"
+            onError={() => setFailedImageUrl(imageUrl)}
+          />
+        ) : null}
+        <div className="absolute inset-0 bg-slate-950/20" />
+        <div className="absolute bottom-3 left-3 max-w-[calc(100%-1.5rem)] rounded bg-black/60 px-2.5 py-1.5 text-xs leading-5 text-slate-100">
+          {hasSatelliteImage
+            ? "Satellite imagery loaded. Roof measurement diagrams are shown separately until traced polygons or Solar masks are available."
+            : "Satellite imagery is unavailable; measurement diagrams remain draft-only."}
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+        {facets.map((facet) => (
+          <div key={facet.name} className="rounded border border-white/10 bg-white/10 px-2 py-1.5">
+            <div className="font-medium text-white">{facet.name}</div>
+            <div className="mt-0.5 text-slate-300">{facet.squares.toFixed(1)} sq</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4">
@@ -791,6 +868,14 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+type FacetRow = {
+  name: string;
+  structure: string;
+  assumption: string;
+  squares: number;
+  segment?: RoofSegmentMeasurement;
+};
 
 function createLocalSnapshot(
   input: PropertyIntake,
@@ -918,7 +1003,17 @@ function createApprovalDraft(snapshot: WorkflowSnapshot) {
   };
 }
 
-function buildFacetRows(totalSquares: number) {
+function buildFacetRows(draft: WorkflowDraft): FacetRow[] {
+  if (draft.roofSegments.length) {
+    return draft.roofSegments.map((segment, index) => ({
+      name: String.fromCharCode(65 + index),
+      structure: "main roof",
+      assumption: formatRoofSegmentAssumption(segment),
+      squares: segment.squares,
+      segment,
+    }));
+  }
+
   const rows = [
     { name: "A", structure: "main roof", assumption: "front plane", share: 0.36 },
     { name: "B", structure: "main roof", assumption: "rear plane", share: 0.34 },
@@ -928,8 +1023,23 @@ function buildFacetRows(totalSquares: number) {
 
   return rows.map((row) => ({
     ...row,
-    squares: Math.round(totalSquares * row.share * 10) / 10,
+    squares: Math.round(draft.roofSquares * row.share * 10) / 10,
+    segment: undefined,
   }));
+}
+
+function formatRoofSegmentAssumption(segment: RoofSegmentMeasurement) {
+  const details = [];
+
+  if (typeof segment.pitchDegrees === "number") {
+    details.push(`${Math.round(segment.pitchDegrees)} deg pitch`);
+  }
+
+  if (typeof segment.azimuthDegrees === "number") {
+    details.push(`${Math.round(segment.azimuthDegrees)} deg azimuth`);
+  }
+
+  return details.length ? details.join(", ") : "Google Solar segment";
 }
 
 function formatDate(value: string) {

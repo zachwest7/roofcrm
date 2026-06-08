@@ -19,9 +19,17 @@ const baseDraft: DraftMeasurement = {
   includedStructures: ["main roof", "attached garage"],
   assumptions: ["Address-only baseline."],
   evidence: [],
-  riskFlags: [],
+  riskFlags: [
+    {
+      code: "ADDRESS_ONLY",
+      label: "Address-only estimate",
+      severity: "high",
+      detail: "No connected imagery, roof facets, parcel geometry, or pitch source has confirmed the draft.",
+    },
+  ],
   accuracyBand: { minPercent: 10, maxPercent: 25 },
   sourceStackQuality: "address_only",
+  roofSegments: [],
 };
 
 describe("measurement source stack", () => {
@@ -46,10 +54,25 @@ describe("measurement source stack", () => {
     expect(calibrated.pitchClass).toBe("medium");
     expect(calibrated.confidenceScore).toBeGreaterThanOrEqual(72);
     expect(calibrated.accuracyBand).toEqual({ minPercent: 3, maxPercent: 8 });
+    expect(calibrated.roofSegments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "Solar A", squares: squareMetersToRoofSquares(121.5) }),
+        expect.objectContaining({ label: "Solar B", squares: squareMetersToRoofSquares(98.25) }),
+      ]),
+    );
     expect(calibrated.evidence.map((item) => item.label)).toEqual(
       expect.arrayContaining(["Google Solar roof segments", "Address validation"]),
     );
     expect(calibrated.riskFlags.map((flag) => flag.code)).not.toContain("ADDRESS_ONLY");
+  });
+
+  it("keeps the address-only risk flag when no geometry source was used", () => {
+    const calibrated = calibrateDraftWithSources(baseDraft, {
+      googleSolar: { status: "unavailable" },
+      publicFootprints: { status: "unavailable" },
+    });
+
+    expect(calibrated.riskFlags.map((flag) => flag.code)).toContain("ADDRESS_ONLY");
   });
 
   it("flags source disagreement when public footprints conflict with Solar area", () => {
@@ -73,7 +96,7 @@ describe("measurement source stack", () => {
 
   it("reports provider readiness without exposing API key values", () => {
     const readiness = buildMeasurementSourceReadiness({
-      googleMapsApiKey: "AIza-real-looking-key",
+      googleMapsApiKey: "test-google-maps-key",
       nearmapApiKey: "",
       mapboxAccessToken: "pk.mapbox-token",
     });
@@ -86,7 +109,7 @@ describe("measurement source stack", () => {
         expect.objectContaining({ code: "mapbox_satellite", status: "configured" }),
       ]),
     );
-    expect(JSON.stringify(readiness)).not.toContain("AIza-real-looking-key");
+    expect(JSON.stringify(readiness)).not.toContain("test-google-maps-key");
     expect(JSON.stringify(readiness)).not.toContain("pk.mapbox-token");
   });
 });

@@ -154,3 +154,49 @@
   color: rgb(15 23 42);
   font-size: 0.875rem;
 }
+
+@media print {
+  @page {
+    size: letter;
+    margin: 0.35in;
+  }
+
+  body {
+    background: white !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .measurement-report-print,
+  .measurement-report-print * {
+    visibility: visible !important;
+  }
+
+  .measurement-report-print {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    background: white !important;
+  }
+
+  .measurement-report-controls {
+    display: none !important;
+  }
+
+  .measurement-report-page {
+    min-height: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    break-after: page;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+  }
+
+  .measurement-report-page:last-child {
+    break-after: auto;
+  }
+}

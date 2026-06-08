@@ -4,7 +4,9 @@ import type {
   MeasurementEvidence,
   MeasurementRiskFlag,
   PitchClass,
+  RoofSegmentMeasurement,
 } from "./draft-provider";
+import type { AutoRoofOutline } from "./solar-mask-outline";
 
 const SQUARE_METERS_TO_SQUARES = 10.76391041671 / 100;
 const SOURCE_DISAGREEMENT_THRESHOLD_PERCENT = 18;
@@ -36,10 +38,20 @@ export type AddressValidationSignal = {
 
 export type GoogleSolarSignal = {
   status: "used" | "unavailable";
+  buildingName?: string;
+  imageryQuality?: string;
+  imageryDate?: string;
+  buildingCenter?: LatLng;
+  buildingBoundingBox?: LatLngBox;
   roofSegmentStats?: Array<{
+    sourceIndex?: number;
     areaMeters2: number;
     pitchDegrees?: number;
     groundAreaMeters2?: number;
+    azimuthDegrees?: number;
+    planeHeightAtCenterMeters?: number;
+    center?: LatLng;
+    boundingBox?: LatLngBox;
   }>;
 };
 
@@ -47,6 +59,8 @@ export type PublicFootprintSignal = {
   status: "used" | "unavailable";
   roofSquaresEstimate?: number;
   sourceLabel?: string;
+  footprintAreaMeters2?: number;
+  roofSurfaceFactor?: number;
 };
 
 export type Usge3DepSignal = {
@@ -55,11 +69,32 @@ export type Usge3DepSignal = {
   sourceResolutionMeters?: number;
 };
 
+export type SolarDataLayersSignal = {
+  status: "used" | "unavailable";
+  imageryQuality?: string;
+  imageryDate?: string;
+  rgbUrl?: string;
+  maskUrl?: string;
+  dsmUrl?: string;
+  autoRoofOutline?: AutoRoofOutline;
+};
+
 export type MeasurementSourceSignals = {
   addressValidation?: AddressValidationSignal;
   googleSolar?: GoogleSolarSignal;
+  solarDataLayers?: SolarDataLayersSignal;
   publicFootprints?: PublicFootprintSignal;
   usgs3dep?: Usge3DepSignal;
+};
+
+export type LatLng = {
+  latitude: number;
+  longitude: number;
+};
+
+export type LatLngBox = {
+  sw: LatLng;
+  ne: LatLng;
 };
 
 export type MeasurementSourceEnv = {
@@ -155,7 +190,13 @@ export function calibrateDraftWithSources(
   signals: MeasurementSourceSignals,
 ): DraftMeasurement {
   const evidence: MeasurementEvidence[] = [...draft.evidence];
-  const riskFlags = draft.riskFlags.filter((flag) => flag.code !== "ADDRESS_ONLY");
+  const hasGeometrySource =
+    signals.googleSolar?.status === "used" ||
+    signals.publicFootprints?.status === "used" ||
+    signals.usgs3dep?.status === "used";
+  const riskFlags = hasGeometrySource
+    ? draft.riskFlags.filter((flag) => flag.code !== "ADDRESS_ONLY")
+    : [...draft.riskFlags];
   let nextDraft: DraftMeasurement = { ...draft, evidence, riskFlags };
   let confidenceBonus = 0;
 
@@ -194,6 +235,7 @@ export function calibrateDraftWithSources(
       confidenceScore: Math.max(nextDraft.confidenceScore, 70),
       accuracyBand: { minPercent: 3, maxPercent: 8 },
       sourceStackQuality: "solar_backed",
+      roofSegments: getSolarRoofSegments(signals.googleSolar),
     };
     confidenceBonus += 18;
     evidence.push({
@@ -202,6 +244,33 @@ export function calibrateDraftWithSources(
       detail: `Roof area derived from ${signals.googleSolar?.roofSegmentStats?.length ?? 0} roof segment(s).`,
       confidenceImpact: 18,
     });
+  }
+
+  if (signals.solarDataLayers?.status === "used") {
+    nextDraft = {
+      ...nextDraft,
+      imageryLayers: {
+        source: "google_solar",
+        imageryQuality: signals.solarDataLayers.imageryQuality,
+        imageryDate: signals.solarDataLayers.imageryDate,
+        rgbUrl: signals.solarDataLayers.rgbUrl,
+        maskUrl: signals.solarDataLayers.maskUrl,
+        dsmUrl: signals.solarDataLayers.dsmUrl,
+      },
+      autoRoofOutline: signals.solarDataLayers.autoRoofOutline,
+    };
+    evidence.push({
+      sourceType: "paid_api",
+      label: "Google Solar imagery layers",
+      detail: signals.solarDataLayers.autoRoofOutline
+        ? "Solar RGB, roof mask, DSM layers, and an auto roof outline proposal were generated for reviewer evidence."
+        : "Solar RGB, roof mask, and DSM layer URLs were returned for reviewer evidence.",
+      confidenceImpact: signals.solarDataLayers.autoRoofOutline ? 8 : 4,
+    });
+
+    if (signals.solarDataLayers.autoRoofOutline) {
+      confidenceBonus += 6;
+    }
   }
 
   if (!solarAreaSquares && signals.publicFootprints?.status === "used" && signals.publicFootprints.roofSquaresEstimate) {
@@ -304,6 +373,25 @@ function getSolarPitchClass(signal?: GoogleSolarSignal): PitchClass | undefined 
   const weightedAverage = pitchValues.reduce((total, pitch) => total + pitch, 0) / pitchValues.length;
 
   return getPitchClassFromDegrees(weightedAverage);
+}
+
+function getSolarRoofSegments(signal?: GoogleSolarSignal): RoofSegmentMeasurement[] {
+  if (signal?.status !== "used" || !signal.roofSegmentStats?.length) {
+    return [];
+  }
+
+  return signal.roofSegmentStats.map((segment, index) => ({
+    id: `solar-segment-${segment.sourceIndex ?? index}`,
+    label: `Solar ${String.fromCharCode(65 + index)}`,
+    source: "google_solar",
+    areaMeters2: segment.areaMeters2,
+    groundAreaMeters2: segment.groundAreaMeters2,
+    squares: squareMetersToRoofSquares(segment.areaMeters2),
+    pitchDegrees: segment.pitchDegrees,
+    azimuthDegrees: segment.azimuthDegrees,
+    center: segment.center,
+    boundingBox: segment.boundingBox,
+  }));
 }
 
 function getPitchClassFromDegrees(pitchDegrees: number): PitchClass {

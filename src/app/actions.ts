@@ -3,15 +3,15 @@
 import { revalidatePath } from "next/cache";
 
 import { generateDraftMeasurement } from "@/lib/measurements/draft-provider";
+import { buildMeasurementSourceContext } from "@/lib/measurements/measurement-source-context";
 import {
-  buildSourceSignalsFromPropertyMatch,
   createTypedOnlyPropertyMatch,
   validatePropertyAddress,
   type PropertyMatch,
 } from "@/lib/measurements/property-match";
 import { formatApprovedMeasurementSummary } from "@/lib/measurements/summary";
 import { createServerWriteClient } from "@/lib/supabase/server";
-import { getMeasurementSourceReadiness } from "@/lib/supabase/env";
+import { getGoogleMapsApiKey, getMeasurementSourceReadiness } from "@/lib/supabase/env";
 import type { Json } from "@/lib/supabase/database.types";
 import type {
   ApprovalInput,
@@ -31,13 +31,17 @@ export async function createPropertyWithDraft(input: PropertyIntake): Promise<Wo
     address: cleanInput.address,
     existingMatch: cleanInput.propertyMatch,
   });
+  const sourceContext = await buildMeasurementSourceContext({
+    propertyMatch,
+    googleMapsApiKey: getGoogleMapsApiKey(),
+  });
   const draft = generateDraftMeasurement({
     address: propertyMatch.formattedAddress ?? cleanInput.address,
     includeGarage: cleanInput.includeGarage,
     includeShed: cleanInput.includeShed,
     mode: cleanInput.mode,
     notes: `${cleanInput.customerNotes}\n${cleanInput.jobNotes}`,
-    sourceSignals: buildSourceSignalsFromPropertyMatch(propertyMatch),
+    sourceSignals: sourceContext.signals,
   });
   const matchedInput = { ...cleanInput, propertyMatch };
 
@@ -92,7 +96,7 @@ export async function createPropertyWithDraft(input: PropertyIntake): Promise<Wo
 
   if (draftError) {
     return buildDemoSnapshot(
-      cleanInput,
+      matchedInput,
       draft,
       now,
       sourceReadiness,
@@ -109,10 +113,10 @@ export async function createPropertyWithDraft(input: PropertyIntake): Promise<Wo
       source_status: source.status,
       source_type: source.sourceType,
       source_role: source.role,
-      detail: source.detail,
+      detail: sourceContext.details[source.code] ?? source.detail,
       expected_accuracy_min_percent: source.expectedAccuracyBand?.minPercent ?? null,
       expected_accuracy_max_percent: source.expectedAccuracyBand?.maxPercent ?? null,
-      payload: source.code === "address_validation" ? (propertyMatch as unknown as Json) : {},
+      payload: (sourceContext.payloads[source.code] ?? {}) as Json,
       checked_at: now,
     })),
   );
@@ -152,7 +156,7 @@ export async function createPropertyWithDraft(input: PropertyIntake): Promise<Wo
       property_id: propertyRow.id,
       draft_id: draftRow.id,
       event_type: "draft_generated" as const,
-      actor_name: "Address-only provider",
+      actor_name: draft.provider === "google_solar_v1" ? "Google Solar source stack" : "Address-only provider",
       summary: `Draft measurement generated at ${draft.roofSquares.toFixed(1)} squares.`,
       payload: draft as unknown as Json,
     },

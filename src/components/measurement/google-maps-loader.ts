@@ -33,6 +33,36 @@ export function isGooglePlacesAutocompleteReady(targetWindow?: Window) {
   return typeof googleWindow.google?.maps?.places?.Autocomplete === "function";
 }
 
+export function waitForGooglePlacesAutocomplete({
+  targetWindow,
+  timeoutMs = 5000,
+  intervalMs = 50,
+}: {
+  targetWindow: Window;
+  timeoutMs?: number;
+  intervalMs?: number;
+}) {
+  const startedAt = Date.now();
+
+  return new Promise<void>((resolve, reject) => {
+    function checkReady() {
+      if (isGooglePlacesAutocompleteReady(targetWindow)) {
+        resolve();
+        return;
+      }
+
+      if (Date.now() - startedAt >= timeoutMs) {
+        reject(new Error("Google Maps Places autocomplete did not initialize."));
+        return;
+      }
+
+      globalThis.setTimeout(checkReady, intervalMs);
+    }
+
+    checkReady();
+  });
+}
+
 export function loadGooglePlacesScript(apiKey: string) {
   if (!apiKey.trim()) {
     return Promise.reject(new Error("Missing Google Maps browser key."));
@@ -54,13 +84,10 @@ export function loadGooglePlacesScript(apiKey: string) {
     const existingScript = document.getElementById(GOOGLE_MAPS_PLACES_SCRIPT_ID) as HTMLScriptElement | null;
 
     function handleLoad() {
-      if (isGooglePlacesAutocompleteReady(window)) {
-        resolve();
-        return;
-      }
-
-      googleMapsPlacesLoadPromise = null;
-      reject(new Error("Google Maps Places autocomplete did not initialize."));
+      waitForGooglePlacesAutocomplete({ targetWindow: window }).then(resolve).catch((error) => {
+        googleMapsPlacesLoadPromise = null;
+        reject(error);
+      });
     }
 
     function handleError() {

@@ -1,4 +1,5 @@
-import { calibrateDraftWithSources, type MeasurementSourceSignals } from "./source-stack";
+import { calibrateDraftWithSources, type LatLng, type LatLngBox, type MeasurementSourceSignals } from "./source-stack";
+import type { AutoRoofOutline } from "./solar-mask-outline";
 
 export type MeasurementMode = "pre_quote_screening" | "quote_ready_review";
 
@@ -55,6 +56,9 @@ export type DraftMeasurement = {
   accuracyBand: AccuracyBand;
   sourceStackQuality: "address_only" | "footprint_backed" | "solar_backed" | "review_ready";
   sourceDisagreementPercent?: number;
+  roofSegments: RoofSegmentMeasurement[];
+  imageryLayers?: RoofImageryLayers;
+  autoRoofOutline?: AutoRoofOutline;
 };
 
 export type MeasurementEvidence = {
@@ -62,6 +66,28 @@ export type MeasurementEvidence = {
   label: string;
   detail: string;
   confidenceImpact: number;
+};
+
+export type RoofSegmentMeasurement = {
+  id: string;
+  label: string;
+  source: "google_solar" | "manual_estimate";
+  areaMeters2?: number;
+  groundAreaMeters2?: number;
+  squares: number;
+  pitchDegrees?: number;
+  azimuthDegrees?: number;
+  center?: LatLng;
+  boundingBox?: LatLngBox;
+};
+
+export type RoofImageryLayers = {
+  source: "google_solar";
+  imageryQuality?: string;
+  imageryDate?: string;
+  rgbUrl?: string;
+  maskUrl?: string;
+  dsmUrl?: string;
 };
 
 const COMPLEXITY_TERMS = [
@@ -116,6 +142,7 @@ export function generateDraftMeasurement(input: DraftMeasurementInput): DraftMea
     riskFlags,
     accuracyBand: { minPercent: 10, maxPercent: 25 },
     sourceStackQuality: "address_only",
+    roofSegments: [],
   };
 
   return input.sourceSignals ? calibrateDraftWithSources(draft, input.sourceSignals) : draft;
