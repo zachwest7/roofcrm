@@ -111,9 +111,14 @@ export function MeasurementReportView({
         </ReportPage>
 
         <ReportPage report={report} pageNumber={2} title="Diagram">
-          <div className="mt-10 flex min-h-[650px] items-center justify-center">
+          <div className="mt-8 flex min-h-[430px] items-center justify-center">
             <RoofReportDiagram report={report} variant="area" />
           </div>
+          <SourceLedger report={report} />
+          <ReportNote>
+            Roof facets and auto outline polygons are tracked separately. The outline is an image-mask proposal; it is
+            not a confirmed facet takeoff until reviewed.
+          </ReportNote>
         </ReportPage>
 
         <ReportPage report={report} pageNumber={3} title="Length Measurement Report">
@@ -134,14 +139,7 @@ export function MeasurementReportView({
             </div>
             <MetricList
               title="Area"
-              rows={[
-                ["Total Roof Area", `${report.cover.totalRoofAreaSqft.toLocaleString()} sqft`],
-                ["Pitched Roof Area", `${report.cover.totalRoofAreaSqft.toLocaleString()} sqft`],
-                ["Flat Roof Area", "0 sqft"],
-                ["Roof Facets", `${report.cover.totalFacets} facets`],
-                ["Predominant Pitch", formatPitch(report.cover.predominantPitch)],
-                ["Confidence", `${report.cover.confidenceScore}%`],
-              ]}
+              rows={getAreaMetricRows(report)}
             />
           </div>
           <FacetTable report={report} />
@@ -171,20 +169,7 @@ export function MeasurementReportView({
             </div>
             <MetricList
               title="Measurements"
-              rows={[
-                ["Total Roof Area", `${report.cover.totalRoofAreaSqft.toLocaleString()} sqft`],
-                ["Total Roof Facets", `${report.cover.totalFacets} facets`],
-                ["Predominant Pitch", formatPitch(report.cover.predominantPitch)],
-                ["Total Eaves", formatFeetAndInches(report.measurements.eavesFt)],
-                ["Total Valleys", formatFeetAndInches(report.measurements.valleysFt)],
-                ["Total Hips", formatFeetAndInches(report.measurements.hipsFt)],
-                ["Total Ridges", formatFeetAndInches(report.measurements.ridgesFt)],
-                ["Total Rakes", formatFeetAndInches(report.measurements.rakesFt)],
-                ["Wall Flashing", formatFeetAndInches(report.measurements.wallFlashingFt)],
-                ["Step Flashing", formatFeetAndInches(report.measurements.stepFlashingFt)],
-                ["Hips + Ridges", formatFeetAndInches(report.measurements.hipsAndRidgesFt)],
-                ["Eaves + Rakes", formatFeetAndInches(report.measurements.eavesAndRakesFt)],
-              ]}
+              rows={getSummaryMetricRows(report)}
             />
           </div>
           <WasteTable report={report} />
@@ -271,7 +256,12 @@ function CoverPage({
 
         <div className="space-y-3 pt-20 text-right text-lg font-semibold text-slate-800">
           <p>{report.cover.totalRoofAreaSqft.toLocaleString()} sqft</p>
-          <p>{report.cover.totalFacets} facets</p>
+          <p>{formatCount(report.cover.totalFacets, "facet")}</p>
+          {report.cover.autoOutlinePolygons ? (
+            <p className="text-sm font-medium text-slate-600">
+              {formatCount(report.cover.autoOutlinePolygons, "outline polygon")}
+            </p>
+          ) : null}
           <p>Predominant Pitch {formatPitch(report.cover.predominantPitch)}</p>
           <p>{report.cover.confidenceScore}% confidence</p>
         </div>
@@ -651,6 +641,40 @@ function FacetTable({ report }: { report: MeasurementReport }) {
   );
 }
 
+function SourceLedger({ report }: { report: MeasurementReport }) {
+  return (
+    <div className="mt-8 overflow-hidden rounded-sm border">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-slate-100 hover:bg-slate-100">
+            <TableHead className="w-[150px] text-sky-600">Measurement</TableHead>
+            <TableHead className="w-[140px] text-sky-600">Value</TableHead>
+            <TableHead className="w-[150px] text-sky-600">Status</TableHead>
+            <TableHead className="text-sky-600">Source / note</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {report.sourceRows.map((row) => (
+            <TableRow key={`${row.label}-${row.value}`}>
+              <TableCell className="font-medium">{row.label}</TableCell>
+              <TableCell>{row.value}</TableCell>
+              <TableCell>
+                <Badge variant={row.status === "review_input" ? "default" : "secondary"}>
+                  {formatSourceStatus(row.status)}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <div className="font-medium text-slate-800">{row.source}</div>
+                <div className="mt-1 text-xs leading-5 text-slate-600">{row.detail}</div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 function WasteTable({ report }: { report: MeasurementReport }) {
   return (
     <div className="mt-8 overflow-hidden rounded-sm border">
@@ -745,6 +769,52 @@ function MaterialSectionRows({
   );
 }
 
+function getAreaMetricRows(report: MeasurementReport): Array<[string, string]> {
+  const rows: Array<[string, string]> = [
+    ["Total Roof Area", `${report.cover.totalRoofAreaSqft.toLocaleString()} sqft`],
+    ["Pitched Roof Area", `${report.cover.totalRoofAreaSqft.toLocaleString()} sqft`],
+    ["Flat Roof Area", "0 sqft"],
+    ["Roof Facets", formatCount(report.cover.totalFacets, "facet")],
+  ];
+
+  if (report.cover.autoOutlinePolygons) {
+    rows.push(["Auto Outline", formatCount(report.cover.autoOutlinePolygons, "polygon")]);
+  }
+
+  rows.push(
+    ["Predominant Pitch", formatPitch(report.cover.predominantPitch)],
+    ["Confidence", `${report.cover.confidenceScore}%`],
+  );
+
+  return rows;
+}
+
+function getSummaryMetricRows(report: MeasurementReport): Array<[string, string]> {
+  const rows: Array<[string, string]> = [
+    ["Total Roof Area", `${report.cover.totalRoofAreaSqft.toLocaleString()} sqft`],
+    ["Total Roof Facets", formatCount(report.cover.totalFacets, "facet")],
+  ];
+
+  if (report.cover.autoOutlinePolygons) {
+    rows.push(["Auto Outline", formatCount(report.cover.autoOutlinePolygons, "polygon")]);
+  }
+
+  rows.push(
+    ["Predominant Pitch", formatPitch(report.cover.predominantPitch)],
+    ["Total Eaves", formatFeetAndInches(report.measurements.eavesFt)],
+    ["Total Valleys", formatFeetAndInches(report.measurements.valleysFt)],
+    ["Total Hips", formatFeetAndInches(report.measurements.hipsFt)],
+    ["Total Ridges", formatFeetAndInches(report.measurements.ridgesFt)],
+    ["Total Rakes", formatFeetAndInches(report.measurements.rakesFt)],
+    ["Wall Flashing", formatFeetAndInches(report.measurements.wallFlashingFt)],
+    ["Step Flashing", formatFeetAndInches(report.measurements.stepFlashingFt)],
+    ["Hips + Ridges", formatFeetAndInches(report.measurements.hipsAndRidgesFt)],
+    ["Eaves + Rakes", formatFeetAndInches(report.measurements.eavesAndRakesFt)],
+  );
+
+  return rows;
+}
+
 function SimpleTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
   return (
     <div className="overflow-hidden rounded-sm border">
@@ -774,6 +844,21 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: string[][] })
 
 function ReportNote({ children }: { children: React.ReactNode }) {
   return <p className="mt-6 text-sm leading-6 text-slate-600">{children}</p>;
+}
+
+function formatCount(count: number, singular: string, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function formatSourceStatus(status: MeasurementReport["sourceRows"][number]["status"]) {
+  const labels: Record<MeasurementReport["sourceRows"][number]["status"], string> = {
+    review_input: "Review input",
+    provider_estimate: "Provider estimate",
+    proposed: "Proposed",
+    heuristic: "Heuristic",
+  };
+
+  return labels[status];
 }
 
 function formatPitch(pitch: PitchClass) {

@@ -64,6 +64,9 @@ describe("measurement report", () => {
         imageWidth: 8,
         imageHeight: 6,
         areaPixels: 22,
+        areaSqft: 15,
+        areaSquares: 0.2,
+        pixelSizeMeters: 0.25,
         confidenceScore: 76,
         polygons: [
           {
@@ -86,7 +89,27 @@ describe("measurement report", () => {
     });
 
     expect(report.cover.totalRoofAreaSqft).toBe(2840);
-    expect(report.cover.totalFacets).toBe(1);
+    expect(report.cover.totalFacets).toBe(2);
+    expect(report.cover.autoOutlinePolygons).toBe(1);
+    expect(report.sourceRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "Quote roof area",
+          status: "review_input",
+          value: "2,840 sqft",
+        }),
+        expect.objectContaining({
+          label: "Solar roof segments",
+          status: "provider_estimate",
+          value: "2 facets / 2,840 sqft",
+        }),
+        expect.objectContaining({
+          label: "Auto roof outline",
+          status: "proposed",
+          value: "1 polygon / 15 sqft mask area",
+        }),
+      ]),
+    );
     expect(report.measurements.hipsAndRidgesFt).toBeGreaterThan(120);
     expect(report.measurements.eavesAndRakesFt).toBeGreaterThan(170);
     expect(report.materialSections[0].rows[0]).toMatchObject({

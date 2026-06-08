@@ -29,6 +29,7 @@ describe("solar mask outline", () => {
       height,
       raster: mask,
       threshold: 0,
+      pixelSizeMeters: 0.25,
     });
 
     expect(outline).toMatchObject({
@@ -37,6 +38,9 @@ describe("solar mask outline", () => {
       imageWidth: width,
       imageHeight: height,
       areaPixels: 22,
+      areaSqft: 15,
+      areaSquares: 0.2,
+      pixelSizeMeters: 0.25,
     });
     expect(outline?.polygons).toHaveLength(1);
     expect(outline?.polygons[0].points).toEqual(

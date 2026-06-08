@@ -47,6 +47,7 @@ export type MeasurementReport = {
     totalRoofAreaSqft: number;
     roofSquares: number;
     totalFacets: number;
+    autoOutlinePolygons: number;
     predominantPitch: PitchClass;
     confidenceScore: number;
     sourceStackQuality: string;
@@ -62,12 +63,21 @@ export type MeasurementReport = {
   wasteScenarios: WasteScenario[];
   materialSections: MaterialEstimateSection[];
   facetRows: MeasurementReportFacet[];
+  sourceRows: MeasurementReportSourceRow[];
   autoRoofOutline?: AutoRoofOutline;
   notes: string[];
   reviewer: {
     name: string;
     notes: string;
   };
+};
+
+export type MeasurementReportSourceRow = {
+  label: string;
+  value: string;
+  source: string;
+  status: "review_input" | "provider_estimate" | "proposed" | "heuristic";
+  detail: string;
 };
 
 export type MeasurementReportFacet = {
@@ -144,7 +154,7 @@ export function buildMeasurementReport(input: MeasurementReportInput): Measureme
   const measurements = buildLengthTotals(roofSquares, input.approvedComplexityClass);
   const wasteScenarios = buildWasteScenarios(roofSquares, input.approvedWastePercent);
   const facetRows = buildFacetRows(input.roofSegments, roofSquares, input.approvedPitchClass, input.includedStructures);
-  const totalFacets = input.autoRoofOutline?.polygons.length ?? facetRows.length;
+  const autoOutlinePolygons = input.autoRoofOutline?.polygons.length ?? 0;
 
   return {
     cover: {
@@ -152,7 +162,8 @@ export function buildMeasurementReport(input: MeasurementReportInput): Measureme
       propertyAddress: input.propertyAddress,
       totalRoofAreaSqft,
       roofSquares,
-      totalFacets,
+      totalFacets: facetRows.length,
+      autoOutlinePolygons,
       predominantPitch: input.approvedPitchClass,
       confidenceScore: input.confidenceScore,
       sourceStackQuality: input.sourceStackQuality,
@@ -170,6 +181,7 @@ export function buildMeasurementReport(input: MeasurementReportInput): Measureme
     wasteScenarios,
     materialSections: buildMaterialEstimateSections(wasteScenarios, measurements),
     facetRows,
+    sourceRows: buildSourceRows(input, totalRoofAreaSqft, roofSquares, facetRows, measurements),
     autoRoofOutline: input.autoRoofOutline,
     notes: [
       "Measurements are rounded for report readability. Quote inputs should be reviewed against source imagery before ordering materials.",
@@ -280,6 +292,90 @@ function buildFacetRows(
       squares,
     };
   });
+}
+
+function buildSourceRows(
+  input: MeasurementReportInput,
+  totalRoofAreaSqft: number,
+  roofSquares: number,
+  facetRows: MeasurementReportFacet[],
+  measurements: MeasurementLengthTotals,
+): MeasurementReportSourceRow[] {
+  const rows: MeasurementReportSourceRow[] = [
+    {
+      label: "Quote roof area",
+      value: `${totalRoofAreaSqft.toLocaleString()} sqft`,
+      source: "Review input",
+      status: "review_input",
+      detail: `${roofSquares.toFixed(1)} squares carried into the quote packet from the current review inputs.`,
+    },
+    {
+      label: "Pitch class",
+      value: input.approvedPitchClass,
+      source: "Review input",
+      status: "review_input",
+      detail: "Uses the approved pitch class unless a manager changes it before quote approval.",
+    },
+  ];
+
+  if (input.roofSegments.length) {
+    const segmentAreaSqft = facetRows.reduce((total, row) => total + row.areaSqft, 0);
+
+    rows.push({
+      label: "Solar roof segments",
+      value: `${facetRows.length} facets / ${segmentAreaSqft.toLocaleString()} sqft`,
+      source: "Google Solar roof segment stats",
+      status: "provider_estimate",
+      detail: "Facet count, pitch labels, and segment areas come from provider roof segment stats, then remain subject to manager review.",
+    });
+  } else {
+    rows.push({
+      label: "Facet split",
+      value: `${facetRows.length} estimated facets`,
+      source: "Report heuristic",
+      status: "heuristic",
+      detail: "Facet rows are a report-only split because no roof segment source was available.",
+    });
+  }
+
+  if (input.autoRoofOutline) {
+    rows.push({
+      label: "Auto roof outline",
+      value: formatAutoOutlineValue(input.autoRoofOutline),
+      source: "Google Solar roof mask",
+      status: "proposed",
+      detail: "The outline is a proposed mask boundary, not a confirmed roof facet diagram.",
+    });
+  }
+
+  rows.push(
+    {
+      label: "Length totals",
+      value: `${formatFeetAndInches(measurements.eavesAndRakesFt)} eaves + rakes`,
+      source: "Report heuristic",
+      status: "heuristic",
+      detail: "Eaves, rakes, valleys, hips, ridges, and flashings are estimated from approved area and complexity until manually traced.",
+    },
+    {
+      label: "Waste factor",
+      value: `${input.approvedWastePercent}%`,
+      source: "Review input",
+      status: "review_input",
+      detail: "Waste is approved by the reviewer and used to generate material quantities.",
+    },
+  );
+
+  return rows;
+}
+
+function formatAutoOutlineValue(outline: AutoRoofOutline) {
+  const polygonLabel = `${outline.polygons.length} ${outline.polygons.length === 1 ? "polygon" : "polygons"}`;
+
+  if (typeof outline.areaSqft === "number") {
+    return `${polygonLabel} / ${outline.areaSqft.toLocaleString()} sqft mask area`;
+  }
+
+  return `${polygonLabel} / ${outline.areaPixels.toLocaleString()} mask pixels`;
 }
 
 function buildMaterialEstimateSections(

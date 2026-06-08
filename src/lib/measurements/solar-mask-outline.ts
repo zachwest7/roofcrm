@@ -16,6 +16,9 @@ export type AutoRoofOutline = {
   imageWidth: number;
   imageHeight: number;
   areaPixels: number;
+  pixelSizeMeters?: number;
+  areaSqft?: number;
+  areaSquares?: number;
   confidenceScore: number;
   polygons: AutoRoofOutlinePolygon[];
   detail: string;
@@ -26,6 +29,7 @@ type MaskRasterInput = {
   height: number;
   raster: ArrayLike<number>;
   threshold?: number;
+  pixelSizeMeters?: number;
 };
 
 type Component = {
@@ -38,6 +42,7 @@ type DirectedEdge = {
 };
 
 const MIN_ROOF_PIXELS = 4;
+const SQUARE_METERS_TO_SQUARE_FEET = 10.76391041671;
 
 export function extractAutoRoofOutlineFromMaskRaster(input: MaskRasterInput): AutoRoofOutline | null {
   const roofPixels = toRoofPixelSet(input);
@@ -58,12 +63,17 @@ export function extractAutoRoofOutlineFromMaskRaster(input: MaskRasterInput): Au
     return null;
   }
 
+  const areaSqft = getMaskAreaSqft(component.pixels.length, input.pixelSizeMeters);
+
   return {
     source: "google_solar_mask",
     status: "proposed",
     imageWidth: input.width,
     imageHeight: input.height,
     areaPixels: component.pixels.length,
+    pixelSizeMeters: input.pixelSizeMeters,
+    areaSqft,
+    areaSquares: typeof areaSqft === "number" ? roundToTenth(areaSqft / 100) : undefined,
     confidenceScore: 76,
     polygons: [
       {
@@ -80,6 +90,7 @@ export function extractAutoRoofOutlineFromMaskRaster(input: MaskRasterInput): Au
 export async function fetchGoogleSolarMaskOutline(input: {
   maskUrl?: string;
   apiKey?: string;
+  pixelSizeMeters?: number;
   fetchFn?: typeof fetch;
 }): Promise<AutoRoofOutline | null> {
   const maskUrl = input.maskUrl?.trim();
@@ -106,6 +117,7 @@ export async function fetchGoogleSolarMaskOutline(input: {
     height: image.getHeight(),
     raster,
     threshold: 0,
+    pixelSizeMeters: input.pixelSizeMeters,
   });
 }
 
@@ -136,6 +148,18 @@ export function simplifyOrthogonalPolygon(points: RoofOutlinePoint[]) {
   }
 
   return simplified;
+}
+
+function getMaskAreaSqft(areaPixels: number, pixelSizeMeters?: number) {
+  if (typeof pixelSizeMeters !== "number" || pixelSizeMeters <= 0) {
+    return undefined;
+  }
+
+  return Math.round(areaPixels * pixelSizeMeters * pixelSizeMeters * SQUARE_METERS_TO_SQUARE_FEET);
+}
+
+function roundToTenth(value: number) {
+  return Math.round(value * 10) / 10;
 }
 
 function toRoofPixelSet(input: MaskRasterInput) {

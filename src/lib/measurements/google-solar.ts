@@ -71,6 +71,8 @@ export type GoogleSolarFetchResult = {
   detail: string;
 };
 
+export const GOOGLE_SOLAR_DATA_LAYER_PIXEL_SIZE_METERS = 0.25;
+
 export function buildGoogleSolarBuildingInsightsUrl(input: {
   apiKey: string;
   latitude: number;
@@ -98,7 +100,7 @@ export function buildGoogleSolarDataLayersUrl(input: {
     radiusMeters: "80",
     view: "IMAGERY_LAYERS",
     requiredQuality: "MEDIUM",
-    pixelSizeMeters: "0.25",
+    pixelSizeMeters: String(GOOGLE_SOLAR_DATA_LAYER_PIXEL_SIZE_METERS),
     exactQualityRequired: "false",
     key: input.apiKey,
   });
@@ -114,6 +116,7 @@ export async function fetchGoogleSolarSignals(input: {
   maskOutlineFetcher?: (input: {
     maskUrl?: string;
     apiKey?: string;
+    pixelSizeMeters?: number;
     fetchFn?: typeof fetch;
   }) => Promise<AutoRoofOutline | null>;
 }): Promise<GoogleSolarFetchResult> {
@@ -196,6 +199,7 @@ export async function fetchGoogleSolarSignals(input: {
     ? await (input.maskOutlineFetcher ?? fetchGoogleSolarMaskOutline)({
         maskUrl: dataLayers.maskUrl,
         apiKey,
+        pixelSizeMeters: GOOGLE_SOLAR_DATA_LAYER_PIXEL_SIZE_METERS,
         fetchFn,
       })
     : null;
