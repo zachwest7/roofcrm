@@ -4,6 +4,7 @@ import type {
   MeasurementMode,
   PitchClass,
 } from "@/lib/measurements/draft-provider";
+import type { PropertyMatch } from "@/lib/measurements/property-match";
 import type { MeasurementSourceReadiness } from "@/lib/measurements/source-stack";
 
 export type PropertyIntake = {
@@ -13,10 +14,12 @@ export type PropertyIntake = {
   includeGarage: boolean;
   includeShed: boolean;
   mode: MeasurementMode;
+  propertyMatch?: PropertyMatch;
 };
 
 export type WorkflowProperty = PropertyIntake & {
   id: string;
+  propertyMatch: PropertyMatch;
   status: "draft" | "needs_review" | "approved" | "exported";
   createdAt: string;
   updatedAt: string;

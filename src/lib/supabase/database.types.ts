@@ -17,6 +17,24 @@ export type Database = {
         Row: {
           id: string;
           address: string;
+          formatted_address: string | null;
+          google_place_id: string | null;
+          latitude: number | null;
+          longitude: number | null;
+          property_match_status:
+            | "typed_only"
+            | "selected_from_google"
+            | "validated"
+            | "needs_confirmation"
+            | "validation_failed";
+          property_match_source: "manual" | "google_places" | "google_address_validation";
+          validation_granularity: string | null;
+          geocode_granularity: string | null;
+          address_complete: boolean | null;
+          validation_next_action: string | null;
+          property_match_detail: string;
+          property_match_payload: Json;
+          property_match_checked_at: string | null;
           customer_notes: string;
           job_notes: string;
           include_garage: boolean;
@@ -30,6 +48,24 @@ export type Database = {
         Insert: {
           id?: string;
           address: string;
+          formatted_address?: string | null;
+          google_place_id?: string | null;
+          latitude?: number | null;
+          longitude?: number | null;
+          property_match_status?:
+            | "typed_only"
+            | "selected_from_google"
+            | "validated"
+            | "needs_confirmation"
+            | "validation_failed";
+          property_match_source?: "manual" | "google_places" | "google_address_validation";
+          validation_granularity?: string | null;
+          geocode_granularity?: string | null;
+          address_complete?: boolean | null;
+          validation_next_action?: string | null;
+          property_match_detail?: string;
+          property_match_payload?: Json;
+          property_match_checked_at?: string | null;
           customer_notes?: string;
           job_notes?: string;
           include_garage?: boolean;

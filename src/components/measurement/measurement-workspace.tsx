@@ -9,6 +9,7 @@ import {
   FileDown,
   History,
   MapPinned,
+  Search,
   Ruler,
   Save,
   Send,
@@ -18,6 +19,11 @@ import { useMemo, useState, useTransition } from "react";
 
 import { approveMeasurement, createPropertyWithDraft } from "@/app/actions";
 import { generateDraftMeasurement, type ComplexityClass, type PitchClass } from "@/lib/measurements/draft-provider";
+import {
+  buildSourceSignalsFromPropertyMatch,
+  createTypedOnlyPropertyMatch,
+  type PropertyMatch,
+} from "@/lib/measurements/property-match";
 import type { MeasurementSourceReadiness } from "@/lib/measurements/source-stack";
 import { formatApprovedMeasurementSummary } from "@/lib/measurements/summary";
 import type {
@@ -62,6 +68,7 @@ const DEFAULT_INTAKE: PropertyIntake = {
   includeGarage: true,
   includeShed: false,
   mode: "pre_quote_screening",
+  propertyMatch: createTypedOnlyPropertyMatch("123 Cypress Point Dr, Boca Raton, FL"),
 };
 
 export function MeasurementWorkspace({
@@ -99,6 +106,7 @@ export function MeasurementWorkspace({
         "Supabase server writes are not configured. Workflow is running in local demo mode.",
       );
       setSnapshot(nextSnapshot);
+      setIntake(nextSnapshot.property);
       setApprovalDraft(createApprovalDraft(nextSnapshot));
       return;
     }
@@ -106,6 +114,7 @@ export function MeasurementWorkspace({
     startTransition(async () => {
       const nextSnapshot = await createPropertyWithDraft(intake);
       setSnapshot(nextSnapshot);
+      setIntake(nextSnapshot.property);
       setApprovalDraft(createApprovalDraft(nextSnapshot));
     });
   }
@@ -155,6 +164,25 @@ export function MeasurementWorkspace({
     });
   }
 
+  function handleAddressChange(value: string) {
+    setIntake((current) => ({
+      ...current,
+      address: value,
+      propertyMatch:
+        current.propertyMatch?.formattedAddress === value
+          ? current.propertyMatch
+          : createTypedOnlyPropertyMatch(value),
+    }));
+  }
+
+  function handlePlaceSelected(match: PropertyMatch) {
+    setIntake((current) => ({
+      ...current,
+      address: match.formattedAddress ?? current.address,
+      propertyMatch: match,
+    }));
+  }
+
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#eef4f8_36%,#f7f7f5_100%)] text-foreground">
       <header className="border-b bg-white/90">
@@ -201,7 +229,12 @@ export function MeasurementWorkspace({
           </CardHeader>
           <CardContent className="space-y-4">
             <Field label="Address">
-              <AddressAutocompleteInput value={intake.address} onValueChange={(value) => updateIntake("address", value)} />
+              <AddressAutocompleteInput
+                value={intake.address}
+                onValueChange={handleAddressChange}
+                onPlaceSelected={handlePlaceSelected}
+              />
+              <PropertyMatchPanel match={intake.propertyMatch} />
             </Field>
 
             <Field label="Mode">
@@ -692,6 +725,64 @@ function SourceStatusBadge({ status }: { status: MeasurementSourceReadiness["sta
   );
 }
 
+function PropertyMatchPanel({ match }: { match?: PropertyMatch }) {
+  const display = getPropertyMatchDisplay(match);
+
+  return (
+    <div className={`mt-2 rounded-lg border px-3 py-2 text-xs leading-5 ${display.classes}`}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex items-center gap-1.5 font-medium">
+          {display.icon === "check" ? <CheckCircle2 className="size-3.5" /> : <Search className="size-3.5" />}
+          {display.label}
+        </span>
+        {match?.placeId ? <span className="font-mono text-[11px] opacity-80">{match.placeId.slice(0, 10)}...</span> : null}
+      </div>
+      <p className="mt-1">{match?.detail ?? "No Google property match has been selected yet."}</p>
+      {typeof match?.latitude === "number" && typeof match.longitude === "number" ? (
+        <p className="mt-1 font-mono text-[11px] opacity-80">
+          {match.latitude.toFixed(6)}, {match.longitude.toFixed(6)}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function getPropertyMatchDisplay(match?: PropertyMatch): {
+  label: string;
+  classes: string;
+  icon: "check" | "search";
+} {
+  if (!match || match.status === "typed_only") {
+    return {
+      label: "Typed address only",
+      classes: "border-amber-200 bg-amber-50 text-amber-950",
+      icon: "search",
+    };
+  }
+
+  if (match.status === "validated") {
+    return {
+      label: "Validated property",
+      classes: "border-emerald-200 bg-emerald-50 text-emerald-950",
+      icon: "check",
+    };
+  }
+
+  if (match.status === "selected_from_google") {
+    return {
+      label: "Selected from Google",
+      classes: "border-sky-200 bg-sky-50 text-sky-950",
+      icon: "check",
+    };
+  }
+
+  return {
+    label: match.status === "validation_failed" ? "Validation failed" : "Needs confirmation",
+    classes: "border-amber-200 bg-amber-50 text-amber-950",
+    icon: "search",
+  };
+}
+
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4">
@@ -713,6 +804,7 @@ function createLocalSnapshot(
     includeShed: input.includeShed,
     mode: input.mode,
     notes: `${input.customerNotes}\n${input.jobNotes}`,
+    sourceSignals: buildSourceSignalsFromPropertyMatch(input.propertyMatch ?? createTypedOnlyPropertyMatch(input.address)),
   });
   const propertyId = `local-property-${crypto.randomUUID()}`;
   const draftId = `local-draft-${crypto.randomUUID()}`;
@@ -720,6 +812,7 @@ function createLocalSnapshot(
   return {
     property: {
       ...input,
+      propertyMatch: input.propertyMatch ?? createTypedOnlyPropertyMatch(input.address),
       id: propertyId,
       status: "needs_review",
       createdAt: now,

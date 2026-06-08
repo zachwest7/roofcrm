@@ -3,6 +3,12 @@
 import { revalidatePath } from "next/cache";
 
 import { generateDraftMeasurement } from "@/lib/measurements/draft-provider";
+import {
+  buildSourceSignalsFromPropertyMatch,
+  createTypedOnlyPropertyMatch,
+  validatePropertyAddress,
+  type PropertyMatch,
+} from "@/lib/measurements/property-match";
 import { formatApprovedMeasurementSummary } from "@/lib/measurements/summary";
 import { createServerWriteClient } from "@/lib/supabase/server";
 import { getMeasurementSourceReadiness } from "@/lib/supabase/env";
@@ -21,18 +27,24 @@ export async function createPropertyWithDraft(input: PropertyIntake): Promise<Wo
   const cleanInput = normalizePropertyIntake(input);
   const now = new Date().toISOString();
   const sourceReadiness = getMeasurementSourceReadiness();
-  const draft = generateDraftMeasurement({
+  const propertyMatch = await validatePropertyAddress({
     address: cleanInput.address,
+    existingMatch: cleanInput.propertyMatch,
+  });
+  const draft = generateDraftMeasurement({
+    address: propertyMatch.formattedAddress ?? cleanInput.address,
     includeGarage: cleanInput.includeGarage,
     includeShed: cleanInput.includeShed,
     mode: cleanInput.mode,
     notes: `${cleanInput.customerNotes}\n${cleanInput.jobNotes}`,
+    sourceSignals: buildSourceSignalsFromPropertyMatch(propertyMatch),
   });
+  const matchedInput = { ...cleanInput, propertyMatch };
 
   const supabase = createServerWriteClient();
 
   if (!supabase) {
-    return buildDemoSnapshot(cleanInput, draft, now, sourceReadiness);
+    return buildDemoSnapshot(matchedInput, draft, now, sourceReadiness);
   }
 
   const { data: propertyRow, error: propertyError } = await supabase
@@ -46,12 +58,13 @@ export async function createPropertyWithDraft(input: PropertyIntake): Promise<Wo
       workflow_mode: cleanInput.mode,
       status: "needs_review",
       updated_at: now,
+      ...propertyMatchToColumns(propertyMatch, now),
     })
     .select()
     .single();
 
   if (propertyError) {
-    return buildDemoSnapshot(cleanInput, draft, now, sourceReadiness, `Supabase write failed: ${propertyError.message}`);
+    return buildDemoSnapshot(matchedInput, draft, now, sourceReadiness, `Supabase write failed: ${propertyError.message}`);
   }
 
   const { data: draftRow, error: draftError } = await supabase
@@ -99,6 +112,7 @@ export async function createPropertyWithDraft(input: PropertyIntake): Promise<Wo
       detail: source.detail,
       expected_accuracy_min_percent: source.expectedAccuracyBand?.minPercent ?? null,
       expected_accuracy_max_percent: source.expectedAccuracyBand?.maxPercent ?? null,
+      payload: source.code === "address_validation" ? (propertyMatch as unknown as Json) : {},
       checked_at: now,
     })),
   );
@@ -132,7 +146,7 @@ export async function createPropertyWithDraft(input: PropertyIntake): Promise<Wo
       event_type: "property_created" as const,
       actor_name: "Owner",
       summary: `Property intake created for ${cleanInput.address}.`,
-      payload: cleanInput as unknown as Json,
+      payload: matchedInput as unknown as Json,
     },
     {
       property_id: propertyRow.id,
@@ -160,6 +174,7 @@ export async function createPropertyWithDraft(input: PropertyIntake): Promise<Wo
       includeGarage: propertyRow.include_garage,
       includeShed: propertyRow.include_shed,
       mode: propertyRow.workflow_mode,
+      propertyMatch: propertyMatchFromRow(propertyRow),
       status: propertyRow.status,
       createdAt: propertyRow.created_at,
       updatedAt: propertyRow.updated_at,
@@ -314,6 +329,7 @@ function normalizePropertyIntake(input: PropertyIntake): PropertyIntake {
     includeGarage: input.includeGarage,
     includeShed: input.includeShed,
     mode: input.mode,
+    propertyMatch: input.propertyMatch,
   };
 }
 
@@ -328,6 +344,7 @@ function buildDemoSnapshot(
   const draftId = `demo-draft-${crypto.randomUUID()}`;
   const property: WorkflowProperty = {
     ...input,
+    propertyMatch: input.propertyMatch ?? createTypedOnlyPropertyMatch(input.address),
     id: propertyId,
     status: "needs_review",
     createdAt: now,
@@ -364,6 +381,55 @@ function buildDemoSnapshot(
     ],
     persisted: false,
     persistenceMessage: message,
+  };
+}
+
+function propertyMatchToColumns(match: PropertyMatch, now: string) {
+  return {
+    formatted_address: match.formattedAddress ?? null,
+    google_place_id: match.placeId ?? null,
+    latitude: match.latitude ?? null,
+    longitude: match.longitude ?? null,
+    property_match_status: match.status,
+    property_match_source: match.source,
+    validation_granularity: match.validationGranularity ?? null,
+    geocode_granularity: match.geocodeGranularity ?? null,
+    address_complete: match.addressComplete ?? null,
+    validation_next_action: match.possibleNextAction ?? null,
+    property_match_detail: match.detail,
+    property_match_payload: match as unknown as Json,
+    property_match_checked_at: match.checkedAt ?? now,
+  };
+}
+
+function propertyMatchFromRow(row: {
+  address: string;
+  formatted_address: string | null;
+  google_place_id: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  property_match_status: PropertyMatch["status"];
+  property_match_source: PropertyMatch["source"];
+  validation_granularity: string | null;
+  geocode_granularity: string | null;
+  address_complete: boolean | null;
+  validation_next_action: string | null;
+  property_match_detail: string;
+  property_match_checked_at: string | null;
+}): PropertyMatch {
+  return {
+    status: row.property_match_status,
+    source: row.property_match_source,
+    formattedAddress: row.formatted_address ?? row.address,
+    placeId: row.google_place_id ?? undefined,
+    latitude: row.latitude ?? undefined,
+    longitude: row.longitude ?? undefined,
+    validationGranularity: row.validation_granularity ?? undefined,
+    geocodeGranularity: row.geocode_granularity ?? undefined,
+    addressComplete: row.address_complete ?? undefined,
+    possibleNextAction: row.validation_next_action ?? undefined,
+    detail: row.property_match_detail,
+    checkedAt: row.property_match_checked_at ?? undefined,
   };
 }
 

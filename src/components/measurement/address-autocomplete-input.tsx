@@ -5,6 +5,10 @@ import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import {
+  createGooglePlacesPropertyMatch,
+  type PropertyMatch,
+} from "@/lib/measurements/property-match";
 
 import { loadGooglePlacesScript } from "./google-maps-loader";
 
@@ -14,6 +18,12 @@ type GooglePlace = {
   formatted_address?: string;
   name?: string;
   place_id?: string;
+  geometry?: {
+    location?: {
+      lat: () => number;
+      lng: () => number;
+    };
+  };
 };
 
 type GoogleAutocomplete = {
@@ -53,19 +63,23 @@ export function AddressAutocompleteInput({
   value,
   onValueChange,
   disabled,
+  onPlaceSelected,
 }: {
   value: string;
   onValueChange: (value: string) => void;
   disabled?: boolean;
+  onPlaceSelected?: (match: PropertyMatch) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const onValueChangeRef = useRef(onValueChange);
+  const onPlaceSelectedRef = useRef(onPlaceSelected);
   const autocompleteRef = useRef<GoogleAutocomplete | null>(null);
   const [isAutocompleteReady, setIsAutocompleteReady] = useState(false);
 
   useEffect(() => {
     onValueChangeRef.current = onValueChange;
-  }, [onValueChange]);
+    onPlaceSelectedRef.current = onPlaceSelected;
+  }, [onValueChange, onPlaceSelected]);
 
   useEffect(() => {
     if (!googleMapsBrowserKey) {
@@ -102,6 +116,15 @@ export function AddressAutocompleteInput({
 
           if (selectedAddress.trim()) {
             onValueChangeRef.current(selectedAddress);
+            onPlaceSelectedRef.current?.(
+              createGooglePlacesPropertyMatch({
+                formattedAddress: selectedAddress,
+                placeId: place.place_id,
+                latitude: place.geometry?.location?.lat(),
+                longitude: place.geometry?.location?.lng(),
+                checkedAt: new Date().toISOString(),
+              }),
+            );
           }
         });
       })
