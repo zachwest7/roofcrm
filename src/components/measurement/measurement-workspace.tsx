@@ -20,6 +20,12 @@ import { useMemo, useState, useTransition } from "react";
 
 import { approveMeasurement, createPropertyWithDraft } from "@/app/actions";
 import {
+  buildApprovalChangeSummary,
+  compareApprovedMeasurementToDraft,
+  type ApprovalAreaComparison,
+  type CalibrationSeverity,
+} from "@/lib/measurements/calibration";
+import {
   generateDraftMeasurement,
   type ComplexityClass,
   type PitchClass,
@@ -33,6 +39,11 @@ import {
 import {
   buildGoogleSatelliteRoofPreviewUrl,
 } from "@/lib/measurements/roof-preview-url";
+import {
+  buildSourceDiagnostics,
+  type SourceDiagnostic,
+  type SourceDiagnosticStatus,
+} from "@/lib/measurements/source-diagnostics";
 import type { MeasurementSourceReadiness } from "@/lib/measurements/source-stack";
 import { formatApprovedMeasurementSummary } from "@/lib/measurements/summary";
 import type {
@@ -73,6 +84,7 @@ import { AddressAutocompleteInput } from "./address-autocomplete-input";
 import { MeasurementReportView } from "./measurement-report";
 
 const googleSatellitePreviewKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY?.trim();
+const APPROVED_STRUCTURE_OPTIONS = ["main roof", "attached garage", "detached shed"];
 
 const DEFAULT_INTAKE: PropertyIntake = {
   address: "123 Cypress Point Dr, Boca Raton, FL",
@@ -105,6 +117,39 @@ export function MeasurementWorkspace({
   const [isPending, startTransition] = useTransition();
 
   const facets = useMemo(() => buildFacetRows(snapshot.draft), [snapshot.draft]);
+  const sourceDiagnostics = useMemo(
+    () =>
+      buildSourceDiagnostics({
+        propertyMatch: snapshot.property.propertyMatch,
+        sourceReadiness: snapshot.sourceReadiness,
+        draft: snapshot.draft,
+      }),
+    [snapshot],
+  );
+  const approvalChangeSummary = useMemo(
+    () =>
+      buildApprovalChangeSummary({
+        draftRoofSquares: snapshot.draft.roofSquares,
+        approvedRoofSquares: approvalDraft.approvedRoofSquares,
+        draftPitchClass: snapshot.draft.pitchClass,
+        approvedPitchClass: approvalDraft.approvedPitchClass,
+        draftWastePercent: snapshot.draft.wastePercent,
+        approvedWastePercent: approvalDraft.approvedWastePercent,
+        draftComplexityClass: snapshot.draft.complexityClass,
+        approvedComplexityClass: approvalDraft.approvedComplexityClass,
+        draftIncludedStructures: snapshot.draft.includedStructures,
+        approvedIncludedStructures: approvalDraft.includedStructures,
+      }),
+    [approvalDraft, snapshot.draft],
+  );
+  const areaComparison = useMemo(
+    () =>
+      compareApprovedMeasurementToDraft({
+        draftRoofSquares: snapshot.draft.roofSquares,
+        approvedRoofSquares: approvalDraft.approvedRoofSquares,
+      }),
+    [approvalDraft.approvedRoofSquares, snapshot.draft.roofSquares],
+  );
   const approved = Boolean(snapshot.approval);
 
   function updateIntake<T extends keyof PropertyIntake>(key: T, value: PropertyIntake[T]) {
@@ -142,7 +187,8 @@ export function MeasurementWorkspace({
       approvedWastePercent: approvalDraft.approvedWastePercent,
       approvedComplexityClass: approvalDraft.approvedComplexityClass,
       confidenceScore: approvalDraft.confidenceScore,
-      includedStructures: snapshot.draft.includedStructures,
+      includedStructures: approvalDraft.includedStructures,
+      correctionSummary: approvalChangeSummary,
       reviewerName: approvalDraft.reviewerName,
       reviewerNotes: approvalDraft.reviewerNotes,
     };
@@ -392,6 +438,19 @@ export function MeasurementWorkspace({
                 <Card className="rounded-lg border-slate-200 bg-white shadow-sm">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-base">
+                      <Search className="size-4 text-sky-700" />
+                      Source Diagnostics
+                    </CardTitle>
+                    <CardDescription>What the app matched, fetched, and still needs reviewed.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <SourceDiagnosticsPanel diagnostics={sourceDiagnostics} />
+                  </CardContent>
+                </Card>
+
+                <Card className="rounded-lg border-slate-200 bg-white shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
                       <Database className="size-4 text-sky-700" />
                       Source Stack
                     </CardTitle>
@@ -578,13 +637,15 @@ export function MeasurementWorkspace({
                     />
                   </Field>
                   <Field label="Included structures">
-                    <div className="flex min-h-10 flex-wrap items-center gap-2 rounded-md border px-3 py-2">
-                      {snapshot.draft.includedStructures.map((structure) => (
-                        <Badge key={structure} variant="secondary">
-                          {structure}
-                        </Badge>
-                      ))}
-                    </div>
+                    <ApprovedStructureChecklist
+                      structures={approvalDraft.includedStructures}
+                      onChange={(structures) =>
+                        setApprovalDraft((current) => ({
+                          ...current,
+                          includedStructures: structures,
+                        }))
+                      }
+                    />
                   </Field>
                   <Field label="Reviewer notes" className="sm:col-span-2">
                     <Textarea
@@ -609,7 +670,9 @@ export function MeasurementWorkspace({
                     <SummaryRow label="Waste" value={`${approvalDraft.approvedWastePercent}%`} />
                     <SummaryRow label="Complexity" value={approvalDraft.approvedComplexityClass} />
                     <SummaryRow label="Confidence" value={`${approvalDraft.confidenceScore}%`} />
+                    <SummaryRow label="Structures" value={approvalDraft.includedStructures.join(", ")} />
                   </div>
+                  <ApprovalCalibrationPanel areaComparison={areaComparison} changes={approvalChangeSummary} />
                   <Button className="mt-5 w-full gap-2" onClick={handleApprove} disabled={isPending}>
                     <Save className="size-4" />
                     {approved ? "Update Approval" : "Approve Inputs"}
@@ -663,6 +726,14 @@ export function MeasurementWorkspace({
                 <CardDescription>Export-ready measurement text.</CardDescription>
               </CardHeader>
               <CardContent>
+                <div className="mb-4 rounded-lg border bg-slate-50 p-4">
+                  <p className="text-sm font-medium text-slate-950">Latest approval corrections</p>
+                  <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
+                    {(snapshot.approval?.correctionSummary ?? approvalChangeSummary).map((change) => (
+                      <li key={change}>{change}</li>
+                    ))}
+                  </ul>
+                </div>
                 <Textarea
                   readOnly
                   rows={snapshot.approvedSummary ? 10 : 4}
@@ -749,6 +820,114 @@ function SourceStatusBadge({ status }: { status: MeasurementSourceReadiness["sta
   return (
     <Badge variant="outline" className={classes[status]}>
       {status}
+    </Badge>
+  );
+}
+
+function SourceDiagnosticsPanel({ diagnostics }: { diagnostics: SourceDiagnostic[] }) {
+  return (
+    <div className="space-y-2">
+      {diagnostics.map((diagnostic) => (
+        <div key={diagnostic.id} className="rounded-lg border bg-white p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-slate-950">{diagnostic.label}</p>
+              <p className="mt-1 text-xs font-medium text-slate-500">{diagnostic.value}</p>
+            </div>
+            <DiagnosticStatusBadge status={diagnostic.status} />
+          </div>
+          <p className="mt-2 text-xs leading-5 text-slate-600">{diagnostic.detail}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DiagnosticStatusBadge({ status }: { status: SourceDiagnosticStatus }) {
+  const classes = {
+    pass: "border-emerald-200 bg-emerald-50 text-emerald-900",
+    warning: "border-amber-200 bg-amber-50 text-amber-950",
+    fail: "border-red-200 bg-red-50 text-red-950",
+    info: "border-slate-200 bg-slate-50 text-slate-600",
+  };
+
+  return (
+    <Badge variant="outline" className={classes[status]}>
+      {status}
+    </Badge>
+  );
+}
+
+function ApprovedStructureChecklist({
+  structures,
+  onChange,
+}: {
+  structures: string[];
+  onChange: (structures: string[]) => void;
+}) {
+  function setStructure(structure: string, checked: boolean) {
+    if (structure === "main roof") {
+      return;
+    }
+
+    const next = checked
+      ? Array.from(new Set(["main roof", ...structures, structure]))
+      : structures.filter((item) => item !== structure);
+
+    onChange(next.includes("main roof") ? next : ["main roof", ...next]);
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border p-3">
+      {APPROVED_STRUCTURE_OPTIONS.map((structure) => (
+        <SwitchRow
+          key={structure}
+          label={structure}
+          checked={structures.includes(structure)}
+          onCheckedChange={(checked) => setStructure(structure, checked)}
+        />
+      ))}
+      <p className="text-xs leading-5 text-slate-500">
+        Main roof remains required; optional structures can be excluded from approved quote scope.
+      </p>
+    </div>
+  );
+}
+
+function ApprovalCalibrationPanel({
+  areaComparison,
+  changes,
+}: {
+  areaComparison: ApprovalAreaComparison;
+  changes: string[];
+}) {
+  return (
+    <div className="mt-4 rounded-lg border bg-white p-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-medium text-slate-950">Reviewer calibration</p>
+        <CalibrationSeverityBadge severity={areaComparison.severity} />
+      </div>
+      <p className="mt-2 text-xs leading-5 text-slate-600">{areaComparison.detail}</p>
+      <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
+        {changes.map((change) => (
+          <li key={change}>{change}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function CalibrationSeverityBadge({ severity }: { severity: CalibrationSeverity }) {
+  const classes = {
+    none: "border-emerald-200 bg-emerald-50 text-emerald-900",
+    minor: "border-sky-200 bg-sky-50 text-sky-900",
+    material: "border-amber-200 bg-amber-50 text-amber-950",
+    major: "border-red-200 bg-red-50 text-red-950",
+  };
+
+  return (
+    <Badge variant="outline" className={classes[severity]}>
+      {severity}
     </Badge>
   );
 }
@@ -959,6 +1138,7 @@ function createLocalApprovalResult(input: ApprovalInput): {
     approvedComplexityClass: input.approvedComplexityClass,
     confidenceScore: input.confidenceScore,
     includedStructures: input.includedStructures,
+    correctionSummary: input.correctionSummary,
     reviewerName: input.reviewerName || "Owner",
     reviewerNotes: input.reviewerNotes,
     approvedAt: now,
@@ -970,6 +1150,8 @@ function createLocalApprovalResult(input: ApprovalInput): {
     approvedWastePercent: input.approvedWastePercent,
     approvedComplexityClass: input.approvedComplexityClass,
     confidenceScore: input.confidenceScore,
+    includedStructures: input.includedStructures,
+    correctionSummary: input.correctionSummary,
     reviewerName: approval.reviewerName,
     reviewerNotes: input.reviewerNotes,
     approvedAt: new Date(now),
@@ -985,7 +1167,7 @@ function createLocalApprovalResult(input: ApprovalInput): {
       approvalId: approval.id,
       eventType: "approved",
       actorName: approval.reviewerName,
-      summary: `Approved quote inputs at ${input.approvedRoofSquares.toFixed(1)} squares.`,
+      summary: formatLocalApprovalAuditSummary(input.approvedRoofSquares, input.correctionSummary),
       createdAt: now,
     },
   };
@@ -998,9 +1180,19 @@ function createApprovalDraft(snapshot: WorkflowSnapshot) {
     approvedWastePercent: snapshot.draft.wastePercent,
     approvedComplexityClass: snapshot.draft.complexityClass,
     confidenceScore: Math.min(82, snapshot.draft.confidenceScore + 28),
+    includedStructures: snapshot.draft.includedStructures,
     reviewerName: "Zach",
     reviewerNotes: "Reviewed draft assumptions and confirmed quote inputs.",
   };
+}
+
+function formatLocalApprovalAuditSummary(approvedRoofSquares: number, correctionSummary: string[]) {
+  const correctionLabel =
+    correctionSummary.length && correctionSummary[0] !== "Reviewer kept the draft quote inputs."
+      ? ` Corrections: ${correctionSummary.join(" ")}`
+      : "";
+
+  return `Approved quote inputs at ${approvedRoofSquares.toFixed(1)} squares.${correctionLabel}`;
 }
 
 function buildFacetRows(draft: WorkflowDraft): FacetRow[] {

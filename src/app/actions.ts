@@ -214,6 +214,7 @@ export async function approveMeasurement(input: ApprovalInput): Promise<{
     approvedComplexityClass: input.approvedComplexityClass,
     confidenceScore: input.confidenceScore,
     includedStructures: input.includedStructures,
+    correctionSummary: input.correctionSummary,
     reviewerName: input.reviewerName || "Owner",
     reviewerNotes: input.reviewerNotes,
     approvedAt: now,
@@ -226,6 +227,8 @@ export async function approveMeasurement(input: ApprovalInput): Promise<{
     approvedWastePercent: input.approvedWastePercent,
     approvedComplexityClass: input.approvedComplexityClass,
     confidenceScore: input.confidenceScore,
+    includedStructures: input.includedStructures,
+    correctionSummary: input.correctionSummary,
     reviewerName: approval.reviewerName,
     reviewerNotes: input.reviewerNotes,
     approvedAt: new Date(now),
@@ -237,7 +240,7 @@ export async function approveMeasurement(input: ApprovalInput): Promise<{
     approvalId: approval.id,
     eventType: "approved",
     actorName: approval.reviewerName,
-    summary: `Approved quote inputs at ${input.approvedRoofSquares.toFixed(1)} squares.`,
+    summary: formatApprovalAuditSummary(input.approvedRoofSquares, input.correctionSummary),
     createdAt: now,
   });
 
@@ -296,6 +299,7 @@ export async function approveMeasurement(input: ApprovalInput): Promise<{
       payload: {
         approval: approvalRow,
         approvedSummary,
+        correctionSummary: input.correctionSummary,
       } as unknown as Json,
     })
     .select()
@@ -314,6 +318,7 @@ export async function approveMeasurement(input: ApprovalInput): Promise<{
       approvedComplexityClass: approvalRow.approved_complexity_class,
       confidenceScore: approvalRow.confidence_score,
       includedStructures: approvalRow.included_structures,
+      correctionSummary: input.correctionSummary,
       reviewerName: approvalRow.reviewer_name,
       reviewerNotes: approvalRow.reviewer_notes,
       approvedAt: approvalRow.approved_at,
@@ -335,6 +340,15 @@ function normalizePropertyIntake(input: PropertyIntake): PropertyIntake {
     mode: input.mode,
     propertyMatch: input.propertyMatch,
   };
+}
+
+function formatApprovalAuditSummary(approvedRoofSquares: number, correctionSummary: string[]) {
+  const correctionLabel =
+    correctionSummary.length && correctionSummary[0] !== "Reviewer kept the draft quote inputs."
+      ? ` Corrections: ${correctionSummary.join(" ")}`
+      : "";
+
+  return `Approved quote inputs at ${approvedRoofSquares.toFixed(1)} squares.${correctionLabel}`;
 }
 
 function buildDemoSnapshot(

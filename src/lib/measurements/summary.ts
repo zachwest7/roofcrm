@@ -7,6 +7,8 @@ export type ApprovedMeasurementSummaryInput = {
   approvedWastePercent: number;
   approvedComplexityClass: ComplexityClass;
   confidenceScore: number;
+  includedStructures?: string[];
+  correctionSummary?: string[];
   reviewerName: string;
   reviewerNotes?: string;
   approvedAt: Date;
@@ -26,6 +28,8 @@ export function formatApprovedMeasurementSummary(input: ApprovedMeasurementSumma
     `Pitch: ${input.approvedPitchClass}`,
     `Waste: ${input.approvedWastePercent}%`,
     `Complexity: ${input.approvedComplexityClass}`,
+    `Included structures: ${input.includedStructures?.length ? input.includedStructures.join(", ") : "Not specified"}`,
+    `Corrections: ${input.correctionSummary?.length ? input.correctionSummary.join(" ") : "Reviewer kept the draft quote inputs."}`,
     `Confidence: ${input.confidenceScore}%`,
     `Reviewer: ${input.reviewerName}`,
     `Approved at: ${approvedDate}`,

@@ -11,6 +11,8 @@ describe("formatApprovedMeasurementSummary", () => {
       approvedWastePercent: 12,
       approvedComplexityClass: "moderate",
       confidenceScore: 72,
+      includedStructures: ["main roof", "attached garage"],
+      correctionSummary: ["Roof area increased by 1.2 squares (4.4%)."],
       reviewerName: "Zach",
       reviewerNotes: "Adjusted garage area after aerial review.",
       approvedAt: new Date("2026-06-07T20:15:00.000Z"),
@@ -20,6 +22,8 @@ describe("formatApprovedMeasurementSummary", () => {
     expect(summary).toContain("28.4 squares");
     expect(summary).toContain("Pitch: medium");
     expect(summary).toContain("Waste: 12%");
+    expect(summary).toContain("Included structures: main roof, attached garage");
+    expect(summary).toContain("Corrections: Roof area increased by 1.2 squares (4.4%).");
     expect(summary).toContain("Confidence: 72%");
     expect(summary).toContain("Reviewer: Zach");
     expect(summary).toContain("Adjusted garage area");

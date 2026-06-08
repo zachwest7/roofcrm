@@ -41,6 +41,7 @@ export type WorkflowApproval = {
   approvedComplexityClass: ComplexityClass;
   confidenceScore: number;
   includedStructures: string[];
+  correctionSummary: string[];
   reviewerName: string;
   reviewerNotes: string;
   approvedAt: string;
@@ -78,6 +79,7 @@ export type ApprovalInput = {
   approvedComplexityClass: ComplexityClass;
   confidenceScore: number;
   includedStructures: string[];
+  correctionSummary: string[];
   reviewerName: string;
   reviewerNotes: string;
 };

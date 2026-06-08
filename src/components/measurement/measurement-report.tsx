@@ -35,6 +35,7 @@ export type MeasurementReportApprovalDraft = {
   approvedWastePercent: number;
   approvedComplexityClass: ComplexityClass;
   confidenceScore: number;
+  includedStructures: string[];
   reviewerName: string;
   reviewerNotes: string;
 };
@@ -60,7 +61,7 @@ export function MeasurementReportView({
         approvedWastePercent: approvedOrDraft.approvedWastePercent,
         approvedComplexityClass: approvedOrDraft.approvedComplexityClass,
         confidenceScore: approvedOrDraft.confidenceScore,
-        includedStructures: snapshot.draft.includedStructures,
+        includedStructures: approvedOrDraft.includedStructures,
         sourceStackQuality: snapshot.draft.sourceStackQuality,
         accuracyBand: snapshot.draft.accuracyBand,
         roofSegments: snapshot.draft.roofSegments,
