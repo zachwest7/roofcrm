@@ -4,6 +4,7 @@ import type {
   MeasurementMode,
   PitchClass,
 } from "@/lib/measurements/draft-provider";
+import type { ManualRoofMeasurements } from "@/lib/measurements/manual-geometry";
 import type { PropertyMatch } from "@/lib/measurements/property-match";
 import type { MeasurementSourceReadiness } from "@/lib/measurements/source-stack";
 
@@ -42,6 +43,7 @@ export type WorkflowApproval = {
   confidenceScore: number;
   includedStructures: string[];
   correctionSummary: string[];
+  manualMeasurements?: ManualRoofMeasurements;
   reviewerName: string;
   reviewerNotes: string;
   approvedAt: string;
@@ -80,6 +82,7 @@ export type ApprovalInput = {
   confidenceScore: number;
   includedStructures: string[];
   correctionSummary: string[];
+  manualMeasurements?: ManualRoofMeasurements;
   reviewerName: string;
   reviewerNotes: string;
 };

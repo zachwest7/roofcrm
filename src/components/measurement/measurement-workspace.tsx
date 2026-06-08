@@ -10,6 +10,7 @@ import {
   FileText,
   History,
   MapPinned,
+  MousePointer2,
   Search,
   Ruler,
   Save,
@@ -31,6 +32,14 @@ import {
   type PitchClass,
   type RoofSegmentMeasurement,
 } from "@/lib/measurements/draft-provider";
+import {
+  buildFallbackManualRoofGeometry,
+  buildManualRoofGeometryFromAutoOutline,
+  calculateManualRoofMeasurements,
+  replaceManualRoofGeometryPoint,
+  type ManualRoofGeometry,
+  type ManualRoofMeasurements,
+} from "@/lib/measurements/manual-geometry";
 import {
   buildSourceSignalsFromPropertyMatch,
   createTypedOnlyPropertyMatch,
@@ -86,6 +95,18 @@ import { MeasurementReportView } from "./measurement-report";
 const googleSatellitePreviewKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY?.trim();
 const APPROVED_STRUCTURE_OPTIONS = ["main roof", "attached garage", "detached shed"];
 
+type ApprovalDraftState = {
+  approvedRoofSquares: number;
+  approvedPitchClass: PitchClass;
+  approvedWastePercent: number;
+  approvedComplexityClass: ComplexityClass;
+  confidenceScore: number;
+  includedStructures: string[];
+  manualMeasurements?: ManualRoofMeasurements;
+  reviewerName: string;
+  reviewerNotes: string;
+};
+
 const DEFAULT_INTAKE: PropertyIntake = {
   address: "123 Cypress Point Dr, Boca Raton, FL",
   customerNotes: "Homeowner asked for a pre-quote range before scheduling inspection.",
@@ -113,10 +134,12 @@ export function MeasurementWorkspace({
         : "Supabase server writes are not configured. Workflow is running in local demo mode.",
     ),
   );
-  const [approvalDraft, setApprovalDraft] = useState(() => createApprovalDraft(snapshot));
+  const [approvalDraft, setApprovalDraft] = useState<ApprovalDraftState>(() => createApprovalDraft(snapshot));
+  const [manualGeometry, setManualGeometry] = useState(() => createManualGeometryForSnapshot(snapshot));
   const [isPending, startTransition] = useTransition();
 
   const facets = useMemo(() => buildFacetRows(snapshot.draft), [snapshot.draft]);
+  const manualMeasurements = useMemo(() => calculateManualRoofMeasurements(manualGeometry), [manualGeometry]);
   const sourceDiagnostics = useMemo(
     () =>
       buildSourceDiagnostics({
@@ -166,6 +189,7 @@ export function MeasurementWorkspace({
       setSnapshot(nextSnapshot);
       setIntake(nextSnapshot.property);
       setApprovalDraft(createApprovalDraft(nextSnapshot));
+      setManualGeometry(createManualGeometryForSnapshot(nextSnapshot));
       return;
     }
 
@@ -174,6 +198,7 @@ export function MeasurementWorkspace({
       setSnapshot(nextSnapshot);
       setIntake(nextSnapshot.property);
       setApprovalDraft(createApprovalDraft(nextSnapshot));
+      setManualGeometry(createManualGeometryForSnapshot(nextSnapshot));
     });
   }
 
@@ -189,6 +214,7 @@ export function MeasurementWorkspace({
       confidenceScore: approvalDraft.confidenceScore,
       includedStructures: approvalDraft.includedStructures,
       correctionSummary: approvalChangeSummary,
+      manualMeasurements: approvalDraft.manualMeasurements,
       reviewerName: approvalDraft.reviewerName,
       reviewerNotes: approvalDraft.reviewerNotes,
     };
@@ -239,6 +265,14 @@ export function MeasurementWorkspace({
       ...current,
       address: match.formattedAddress ?? current.address,
       propertyMatch: match,
+    }));
+  }
+
+  function handleApplyManualGeometry() {
+    setApprovalDraft((current) => ({
+      ...current,
+      approvedRoofSquares: manualMeasurements.roofSquares,
+      manualMeasurements,
     }));
   }
 
@@ -499,6 +533,28 @@ export function MeasurementWorkspace({
                 </Card>
               </div>
             </div>
+
+            <Card className="rounded-lg border-slate-200 bg-white shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <MousePointer2 className="size-4 text-sky-700" />
+                  Manual Roof Geometry
+                </CardTitle>
+                <CardDescription>
+                  Drag roof outline handles, then apply traced area and edge lengths to the approval inputs.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ManualGeometryEditor
+                  snapshot={snapshot}
+                  geometry={manualGeometry}
+                  measurements={manualMeasurements}
+                  onGeometryChange={setManualGeometry}
+                  onApply={handleApplyManualGeometry}
+                  applied={approvalDraft.manualMeasurements === manualMeasurements}
+                />
+              </CardContent>
+            </Card>
 
             <Card className="rounded-lg border-slate-200 bg-white shadow-sm">
               <CardHeader>
@@ -1039,6 +1095,202 @@ function RoofPreviewPanel({ snapshot, facets }: { snapshot: WorkflowSnapshot; fa
   );
 }
 
+function ManualGeometryEditor({
+  snapshot,
+  geometry,
+  measurements,
+  onGeometryChange,
+  onApply,
+  applied,
+}: {
+  snapshot: WorkflowSnapshot;
+  geometry: ManualRoofGeometry;
+  measurements: ManualRoofMeasurements;
+  onGeometryChange: (geometry: ManualRoofGeometry) => void;
+  onApply: () => void;
+  applied: boolean;
+}) {
+  const [activePoint, setActivePoint] = useState<{ facetId: string; pointIndex: number } | null>(null);
+  const satelliteImageUrl = useMemo(
+    () =>
+      buildGoogleSatelliteRoofPreviewUrl({
+        apiKey: googleSatellitePreviewKey,
+        propertyMatch: snapshot.property.propertyMatch,
+        fallbackAddress: snapshot.property.address,
+      }),
+    [snapshot.property.address, snapshot.property.propertyMatch],
+  );
+  const rasterPreview = snapshot.draft.solarRasterPreview;
+  const backgroundImageUrl =
+    rasterPreview?.imageWidth === geometry.imageWidth && rasterPreview.imageHeight === geometry.imageHeight
+      ? rasterPreview.imageDataUrl
+      : satelliteImageUrl;
+
+  function handlePointerMove(event: React.PointerEvent<SVGSVGElement>) {
+    if (!activePoint) {
+      return;
+    }
+
+    onGeometryChange(
+      replaceManualRoofGeometryPoint(geometry, {
+        facetId: activePoint.facetId,
+        pointIndex: activePoint.pointIndex,
+        point: getSvgPointerPoint(event, geometry),
+      }),
+    );
+  }
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+      <div className="overflow-hidden rounded-lg border bg-slate-950 p-4 text-white">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-300">
+          <span>{geometry.source === "google_solar_mask" ? "Solar mask outline" : "Manual fallback outline"}</span>
+          <span>{geometry.pixelSizeFeet.toFixed(2)} ft / px</span>
+        </div>
+        <svg
+          className="aspect-[32/21] w-full rounded-md border border-white/10 bg-slate-900"
+          viewBox={`0 0 ${geometry.imageWidth} ${geometry.imageHeight}`}
+          role="img"
+          aria-label="Editable roof geometry outline"
+          onPointerMove={handlePointerMove}
+          onPointerUp={() => setActivePoint(null)}
+          onPointerLeave={() => setActivePoint(null)}
+        >
+          {backgroundImageUrl ? (
+            <image
+              href={backgroundImageUrl}
+              width={geometry.imageWidth}
+              height={geometry.imageHeight}
+              preserveAspectRatio="none"
+            />
+          ) : (
+            <rect width={geometry.imageWidth} height={geometry.imageHeight} className="fill-slate-800" />
+          )}
+          <rect width={geometry.imageWidth} height={geometry.imageHeight} className="fill-black/25" />
+          {measurements.edgeRows.map((edge) => (
+            <line
+              key={edge.id}
+              x1={edge.from.x}
+              y1={edge.from.y}
+              x2={edge.to.x}
+              y2={edge.to.y}
+              className={getManualEdgeStrokeClass(edge.type)}
+              strokeWidth="1.5"
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+          {geometry.facets.map((facet) => (
+            <g key={facet.id}>
+              <polygon
+                points={facet.points.map((point) => `${point.x},${point.y}`).join(" ")}
+                className="fill-sky-300/20 stroke-white"
+                strokeWidth="1.4"
+                vectorEffect="non-scaling-stroke"
+              />
+              {facet.points.map((point, pointIndex) => (
+                <circle
+                  key={`${facet.id}-${pointIndex}`}
+                  cx={point.x}
+                  cy={point.y}
+                  r={Math.max(1.6, geometry.imageWidth * 0.012)}
+                  className="cursor-move fill-white stroke-sky-600"
+                  strokeWidth="1"
+                  vectorEffect="non-scaling-stroke"
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    setActivePoint({ facetId: facet.id, pointIndex });
+                  }}
+                />
+              ))}
+            </g>
+          ))}
+        </svg>
+        <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-300">
+          <LegendItem className="bg-emerald-400" label="Eaves" />
+          <LegendItem className="bg-amber-400" label="Rakes" />
+          <LegendItem className="bg-purple-400" label="Hips" />
+          <LegendItem className="bg-lime-400" label="Ridges" />
+          <LegendItem className="bg-red-400" label="Valleys" />
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="rounded-lg border bg-slate-50 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium text-slate-950">Traced measurements</p>
+            <Badge variant={applied ? "default" : "secondary"}>{applied ? "Applied" : "Draft trace"}</Badge>
+          </div>
+          <div className="mt-3 space-y-2 text-sm">
+            <SummaryRow label="Area" value={`${measurements.areaSqft.toLocaleString()} sqft`} />
+            <SummaryRow label="Squares" value={`${measurements.roofSquares.toFixed(1)} sq`} />
+            <SummaryRow label="Eaves" value={formatFeetAndInches(measurements.lengthTotals.eavesFt)} />
+            <SummaryRow label="Rakes" value={formatFeetAndInches(measurements.lengthTotals.rakesFt)} />
+            <SummaryRow label="Hips" value={formatFeetAndInches(measurements.lengthTotals.hipsFt)} />
+            <SummaryRow label="Ridges" value={formatFeetAndInches(measurements.lengthTotals.ridgesFt)} />
+            <SummaryRow label="Valleys" value={formatFeetAndInches(measurements.lengthTotals.valleysFt)} />
+          </div>
+          <Button className="mt-4 w-full gap-2" onClick={onApply}>
+            <ClipboardCheck className="size-4" />
+            Apply Trace To Approval
+          </Button>
+        </div>
+
+        <div className="overflow-hidden rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Edge</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead className="text-right">Length</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {measurements.edgeRows.slice(0, 8).map((edge, index) => (
+                <TableRow key={edge.id}>
+                  <TableCell>{index + 1}</TableCell>
+                  <TableCell>{edge.type}</TableCell>
+                  <TableCell className="text-right">{formatFeetAndInches(edge.lengthFt)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LegendItem({ className, label }: { className: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`h-1.5 w-5 ${className}`} />
+      {label}
+    </span>
+  );
+}
+
+function getManualEdgeStrokeClass(type: string) {
+  const classes: Record<string, string> = {
+    eave: "stroke-emerald-400",
+    rake: "stroke-amber-400",
+    hip: "stroke-purple-400",
+    ridge: "stroke-lime-400",
+    valley: "stroke-red-400",
+    flashing: "stroke-cyan-400",
+  };
+
+  return classes[type] ?? "stroke-white";
+}
+
+function getSvgPointerPoint(event: React.PointerEvent<SVGSVGElement>, geometry: ManualRoofGeometry) {
+  const rect = event.currentTarget.getBoundingClientRect();
+
+  return {
+    x: ((event.clientX - rect.left) / rect.width) * geometry.imageWidth,
+    y: ((event.clientY - rect.top) / rect.height) * geometry.imageHeight,
+  };
+}
+
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4">
@@ -1122,6 +1374,17 @@ function formatAccuracyBand(band: { minPercent: number; maxPercent: number }) {
   return `+/- ${band.minPercent}-${band.maxPercent}%`;
 }
 
+function formatFeetAndInches(value: number): string {
+  const feet = Math.floor(value);
+  const inches = Math.round((value - feet) * 12);
+
+  if (inches === 12) {
+    return `${feet + 1}ft 0in`;
+  }
+
+  return `${feet}ft ${inches}in`;
+}
+
 function createLocalApprovalResult(input: ApprovalInput): {
   approval: WorkflowApproval;
   auditEvent: WorkflowAuditEvent;
@@ -1139,6 +1402,7 @@ function createLocalApprovalResult(input: ApprovalInput): {
     confidenceScore: input.confidenceScore,
     includedStructures: input.includedStructures,
     correctionSummary: input.correctionSummary,
+    manualMeasurements: input.manualMeasurements,
     reviewerName: input.reviewerName || "Owner",
     reviewerNotes: input.reviewerNotes,
     approvedAt: now,
@@ -1152,6 +1416,7 @@ function createLocalApprovalResult(input: ApprovalInput): {
     confidenceScore: input.confidenceScore,
     includedStructures: input.includedStructures,
     correctionSummary: input.correctionSummary,
+    manualMeasurements: input.manualMeasurements,
     reviewerName: approval.reviewerName,
     reviewerNotes: input.reviewerNotes,
     approvedAt: new Date(now),
@@ -1181,9 +1446,20 @@ function createApprovalDraft(snapshot: WorkflowSnapshot) {
     approvedComplexityClass: snapshot.draft.complexityClass,
     confidenceScore: Math.min(82, snapshot.draft.confidenceScore + 28),
     includedStructures: snapshot.draft.includedStructures,
+    manualMeasurements: undefined,
     reviewerName: "Zach",
     reviewerNotes: "Reviewed draft assumptions and confirmed quote inputs.",
   };
+}
+
+function createManualGeometryForSnapshot(snapshot: WorkflowSnapshot) {
+  if (snapshot.draft.autoRoofOutline) {
+    return buildManualRoofGeometryFromAutoOutline(snapshot.draft.autoRoofOutline);
+  }
+
+  return buildFallbackManualRoofGeometry({
+    roofSquares: snapshot.draft.roofSquares,
+  });
 }
 
 function formatLocalApprovalAuditSummary(approvedRoofSquares: number, correctionSummary: string[]) {

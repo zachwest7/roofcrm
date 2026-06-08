@@ -215,6 +215,7 @@ export async function approveMeasurement(input: ApprovalInput): Promise<{
     confidenceScore: input.confidenceScore,
     includedStructures: input.includedStructures,
     correctionSummary: input.correctionSummary,
+    manualMeasurements: input.manualMeasurements,
     reviewerName: input.reviewerName || "Owner",
     reviewerNotes: input.reviewerNotes,
     approvedAt: now,
@@ -229,6 +230,7 @@ export async function approveMeasurement(input: ApprovalInput): Promise<{
     confidenceScore: input.confidenceScore,
     includedStructures: input.includedStructures,
     correctionSummary: input.correctionSummary,
+    manualMeasurements: input.manualMeasurements,
     reviewerName: approval.reviewerName,
     reviewerNotes: input.reviewerNotes,
     approvedAt: new Date(now),
@@ -300,6 +302,7 @@ export async function approveMeasurement(input: ApprovalInput): Promise<{
         approval: approvalRow,
         approvedSummary,
         correctionSummary: input.correctionSummary,
+        manualMeasurements: input.manualMeasurements,
       } as unknown as Json,
     })
     .select()
@@ -319,6 +322,7 @@ export async function approveMeasurement(input: ApprovalInput): Promise<{
       confidenceScore: approvalRow.confidence_score,
       includedStructures: approvalRow.included_structures,
       correctionSummary: input.correctionSummary,
+      manualMeasurements: input.manualMeasurements,
       reviewerName: approvalRow.reviewer_name,
       reviewerNotes: approvalRow.reviewer_notes,
       approvedAt: approvalRow.approved_at,

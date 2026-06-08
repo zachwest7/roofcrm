@@ -94,6 +94,36 @@ describe("measurement report", () => {
         maskOpacity: 0.44,
         detail: "Rendered from Google Solar RGB imagery with the roof mask tinted for manager review.",
       },
+      manualMeasurements: {
+        source: "manual_geometry",
+        areaSqft: 2840,
+        roofSquares: 28.4,
+        lengthTotals: {
+          eavesFt: 140,
+          valleysFt: 16,
+          hipsFt: 34,
+          ridgesFt: 21,
+          rakesFt: 90,
+          wallFlashingFt: 0,
+          stepFlashingFt: 0,
+          transitionsFt: 0,
+          parapetWallsFt: 0,
+          unspecifiedFt: 0,
+          hipsAndRidgesFt: 55,
+          eavesAndRakesFt: 230,
+        },
+        edgeRows: [
+          {
+            id: "manual-outline-edge-1",
+            facetLabel: "Manual outline",
+            type: "eave",
+            lengthFt: 72,
+            from: { x: 1, y: 1 },
+            to: { x: 7, y: 1 },
+          },
+        ],
+        detail: "Area and edge lengths are derived from the manager-adjusted outline geometry.",
+      },
       generatedAt: "2026-06-07T20:15:00.000Z",
     });
 
@@ -122,10 +152,15 @@ describe("measurement report", () => {
           status: "provider_estimate",
           value: "8 x 6 px / 22 roof pixels",
         }),
+        expect.objectContaining({
+          label: "Manual geometry trace",
+          status: "review_input",
+          value: "2,840 sqft / 1 traced edges",
+        }),
       ]),
     );
-    expect(report.measurements.hipsAndRidgesFt).toBeGreaterThan(120);
-    expect(report.measurements.eavesAndRakesFt).toBeGreaterThan(170);
+    expect(report.measurements.hipsAndRidgesFt).toBe(55);
+    expect(report.measurements.eavesAndRakesFt).toBe(230);
     expect(report.materialSections[0].rows[0]).toMatchObject({
       product: "Shingle total",
       unit: "sqft",

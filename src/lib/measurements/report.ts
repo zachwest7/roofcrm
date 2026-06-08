@@ -4,6 +4,7 @@ import type {
   PitchClass,
   RoofSegmentMeasurement,
 } from "./draft-provider";
+import type { ManualRoofMeasurements } from "./manual-geometry";
 import type { AutoRoofOutline } from "./solar-mask-outline";
 import type { SolarRasterPreview } from "./solar-raster-preview";
 
@@ -24,6 +25,7 @@ export type MeasurementReportInput = {
   roofSegments: RoofSegmentMeasurement[];
   autoRoofOutline?: AutoRoofOutline;
   solarRasterPreview?: SolarRasterPreview;
+  manualMeasurements?: ManualRoofMeasurements;
   generatedAt: string;
 };
 
@@ -68,6 +70,7 @@ export type MeasurementReport = {
   sourceRows: MeasurementReportSourceRow[];
   autoRoofOutline?: AutoRoofOutline;
   solarRasterPreview?: SolarRasterPreview;
+  manualMeasurements?: ManualRoofMeasurements;
   notes: string[];
   reviewer: {
     name: string;
@@ -154,7 +157,7 @@ const RIDGE_PRODUCTS = [
 export function buildMeasurementReport(input: MeasurementReportInput): MeasurementReport {
   const roofSquares = roundToTenth(input.approvedRoofSquares);
   const totalRoofAreaSqft = roofSquaresToSquareFeet(roofSquares);
-  const measurements = buildLengthTotals(roofSquares, input.approvedComplexityClass);
+  const measurements = input.manualMeasurements?.lengthTotals ?? buildLengthTotals(roofSquares, input.approvedComplexityClass);
   const wasteScenarios = buildWasteScenarios(roofSquares, input.approvedWastePercent);
   const facetRows = buildFacetRows(input.roofSegments, roofSquares, input.approvedPitchClass, input.includedStructures);
   const autoOutlinePolygons = input.autoRoofOutline?.polygons.length ?? 0;
@@ -187,6 +190,7 @@ export function buildMeasurementReport(input: MeasurementReportInput): Measureme
     sourceRows: buildSourceRows(input, totalRoofAreaSqft, roofSquares, facetRows, measurements),
     autoRoofOutline: input.autoRoofOutline,
     solarRasterPreview: input.solarRasterPreview,
+    manualMeasurements: input.manualMeasurements,
     notes: [
       "Measurements are rounded for report readability. Quote inputs should be reviewed against source imagery before ordering materials.",
       input.customerNotes ? `Customer notes: ${input.customerNotes}` : "Customer notes: none.",
@@ -362,13 +366,25 @@ function buildSourceRows(
     });
   }
 
+  if (input.manualMeasurements) {
+    rows.push({
+      label: "Manual geometry trace",
+      value: `${input.manualMeasurements.areaSqft.toLocaleString()} sqft / ${input.manualMeasurements.edgeRows.length} traced edges`,
+      source: "Reviewer-adjusted outline",
+      status: "review_input",
+      detail: "Area and edge lengths are derived from the manager-adjusted roof outline geometry.",
+    });
+  }
+
   rows.push(
     {
       label: "Length totals",
       value: `${formatFeetAndInches(measurements.eavesAndRakesFt)} eaves + rakes`,
-      source: "Report heuristic",
-      status: "heuristic",
-      detail: "Eaves, rakes, valleys, hips, ridges, and flashings are estimated from approved area and complexity until manually traced.",
+      source: input.manualMeasurements ? "Reviewer-adjusted outline" : "Report heuristic",
+      status: input.manualMeasurements ? "review_input" : "heuristic",
+      detail: input.manualMeasurements
+        ? "Eaves, rakes, hips, and other edge totals are calculated from traced geometry."
+        : "Eaves, rakes, valleys, hips, ridges, and flashings are estimated from approved area and complexity until manually traced.",
     },
     {
       label: "Waste factor",

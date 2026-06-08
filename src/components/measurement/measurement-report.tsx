@@ -14,6 +14,7 @@ import {
 import {
   buildGoogleSatelliteRoofPreviewUrl,
 } from "@/lib/measurements/roof-preview-url";
+import type { ManualRoofMeasurements } from "@/lib/measurements/manual-geometry";
 import type { ComplexityClass, PitchClass } from "@/lib/measurements/draft-provider";
 import type { WorkflowSnapshot } from "@/lib/workflow/types";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +37,7 @@ export type MeasurementReportApprovalDraft = {
   approvedComplexityClass: ComplexityClass;
   confidenceScore: number;
   includedStructures: string[];
+  manualMeasurements?: ManualRoofMeasurements;
   reviewerName: string;
   reviewerNotes: string;
 };
@@ -62,6 +64,7 @@ export function MeasurementReportView({
         approvedComplexityClass: approvedOrDraft.approvedComplexityClass,
         confidenceScore: approvedOrDraft.confidenceScore,
         includedStructures: approvedOrDraft.includedStructures,
+        manualMeasurements: approvedOrDraft.manualMeasurements,
         sourceStackQuality: snapshot.draft.sourceStackQuality,
         accuracyBand: snapshot.draft.accuracyBand,
         roofSegments: snapshot.draft.roofSegments,
