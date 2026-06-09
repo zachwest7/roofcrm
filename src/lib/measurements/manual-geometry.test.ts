@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildFallbackManualRoofGeometry,
+  buildManualRoofGeometryForDraft,
   buildManualRoofGeometryFromAutoOutline,
   calculateManualRoofMeasurements,
   replaceManualRoofGeometryPoint,
@@ -88,5 +89,34 @@ describe("manual roof geometry", () => {
     expect(geometry.source).toBe("manual_fallback");
     expect(measurements.roofSquares).toBe(28.4);
     expect(measurements.lengthTotals.eavesAndRakesFt).toBeGreaterThan(200);
+  });
+
+  it("falls back when the Solar mask outline area does not match the selected roof draft", () => {
+    const geometry = buildManualRoofGeometryForDraft({
+      roofSquares: 15.6,
+      autoRoofOutline: {
+        ...outline,
+        imageWidth: 100,
+        imageHeight: 100,
+        areaSqft: 1_560,
+        areaSquares: 15.6,
+        polygons: [
+          {
+            id: "auto-roof-outline-1",
+            label: "Auto roof outline",
+            areaPixels: 1_560,
+            points: [
+              { x: 0, y: 0 },
+              { x: 80, y: 0 },
+              { x: 80, y: 40 },
+              { x: 0, y: 40 },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(geometry.source).toBe("manual_fallback");
+    expect(calculateManualRoofMeasurements(geometry).roofSquares).toBe(15.6);
   });
 });

@@ -45,8 +45,7 @@ import {
   type RoofSegmentMeasurement,
 } from "@/lib/measurements/draft-provider";
 import {
-  buildFallbackManualRoofGeometry,
-  buildManualRoofGeometryFromAutoOutline,
+  buildManualRoofGeometryForDraft,
   calculateManualRoofMeasurements,
   replaceManualRoofGeometryPoint,
   type ManualRoofGeometry,
@@ -2050,12 +2049,9 @@ function createApprovalDraft(snapshot: WorkflowSnapshot) {
 }
 
 function createManualGeometryForSnapshot(snapshot: WorkflowSnapshot) {
-  if (snapshot.draft.autoRoofOutline) {
-    return buildManualRoofGeometryFromAutoOutline(snapshot.draft.autoRoofOutline);
-  }
-
-  return buildFallbackManualRoofGeometry({
+  return buildManualRoofGeometryForDraft({
     roofSquares: snapshot.draft.roofSquares,
+    autoRoofOutline: snapshot.draft.autoRoofOutline,
   });
 }
 
