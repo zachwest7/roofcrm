@@ -9,4 +9,9 @@ describe("MeasurementWorkspace workbench layout", () => {
     expect(source).toContain("manualCanvas={");
     expect(source).toContain("manualPanel={");
   });
+
+  it("formats saved-job dates with a stable timezone for server and client hydration", () => {
+    expect(source).toContain('const DISPLAY_TIME_ZONE = "America/New_York";');
+    expect(source).toContain("timeZone: DISPLAY_TIME_ZONE");
+  });
 });

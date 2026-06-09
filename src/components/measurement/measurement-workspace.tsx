@@ -113,6 +113,7 @@ import { MeasurementReportView } from "./measurement-report";
 
 const googleSatellitePreviewKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY?.trim();
 const APPROVED_STRUCTURE_OPTIONS = ["main roof", "attached garage", "detached shed"];
+const DISPLAY_TIME_ZONE = "America/New_York";
 
 type ApprovalDraftState = {
   approvedRoofSquares: number;
@@ -2102,5 +2103,6 @@ function formatDate(value: string) {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone: DISPLAY_TIME_ZONE,
   }).format(new Date(value));
 }
