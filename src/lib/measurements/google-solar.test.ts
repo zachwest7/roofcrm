@@ -73,6 +73,7 @@ describe("google solar source adapter", () => {
 
   it("maps Solar roof segment stats and imagery layers into measurement signals", async () => {
     const calls: string[] = [];
+    const maskOutlineRequests: unknown[] = [];
     const fetchFn = async (url: string) => {
       calls.push(url);
 
@@ -97,30 +98,34 @@ describe("google solar source adapter", () => {
       latitude: 26.391234,
       longitude: -80.083456,
       fetchFn,
-      maskOutlineFetcher: async () => ({
-        source: "google_solar_mask",
-        status: "proposed",
-        imageWidth: 8,
-        imageHeight: 6,
-        areaPixels: 22,
-        confidenceScore: 76,
-        polygons: [
-          {
-            id: "auto-roof-outline-1",
-            label: "Auto roof outline",
-            areaPixels: 22,
-            points: [
-              { x: 1, y: 1 },
-              { x: 7, y: 1 },
-              { x: 7, y: 3 },
-              { x: 6, y: 3 },
-              { x: 6, y: 5 },
-              { x: 1, y: 5 },
-            ],
-          },
-        ],
-        detail: "Auto outline extracted from Google Solar roof mask pixels. Manager review is still required.",
-      }),
+      maskOutlineFetcher: async (request) => {
+        maskOutlineRequests.push(request);
+
+        return {
+          source: "google_solar_mask",
+          status: "proposed",
+          imageWidth: 8,
+          imageHeight: 6,
+          areaPixels: 22,
+          confidenceScore: 76,
+          polygons: [
+            {
+              id: "auto-roof-outline-1",
+              label: "Auto roof outline",
+              areaPixels: 22,
+              points: [
+                { x: 1, y: 1 },
+                { x: 7, y: 1 },
+                { x: 7, y: 3 },
+                { x: 6, y: 3 },
+                { x: 6, y: 5 },
+                { x: 1, y: 5 },
+              ],
+            },
+          ],
+          detail: "Auto outline extracted from Google Solar roof mask pixels. Manager review is still required.",
+        };
+      },
       rasterPreviewFetcher: async () => ({
         source: "google_solar_rgb_mask",
         imageWidth: 8,
@@ -133,6 +138,11 @@ describe("google solar source adapter", () => {
     });
 
     expect(calls).toHaveLength(2);
+    expect(maskOutlineRequests).toEqual([
+      expect.objectContaining({
+        targetCoordinates: { latitude: 26.391234, longitude: -80.083456 },
+      }),
+    ]);
     expect(result.signals.googleSolar?.status).toBe("used");
     expect(result.signals.googleSolar?.imageryQuality).toBe("HIGH");
     expect(result.signals.googleSolar?.roofSegmentStats).toHaveLength(2);

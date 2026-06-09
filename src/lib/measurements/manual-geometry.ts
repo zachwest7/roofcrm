@@ -39,18 +39,13 @@ export type ManualRoofMeasurements = {
 };
 
 const METERS_TO_FEET = 3.280839895;
-const MAX_AUTO_OUTLINE_DRAFT_DISAGREEMENT_PERCENT = 45;
 
 export function buildManualRoofGeometryForDraft(input: {
   roofSquares: number;
   autoRoofOutline?: AutoRoofOutline;
 }): ManualRoofGeometry {
   if (input.autoRoofOutline) {
-    const autoGeometry = buildManualRoofGeometryFromAutoOutline(input.autoRoofOutline);
-
-    if (isManualGeometryUsableForDraft(autoGeometry, input.roofSquares)) {
-      return autoGeometry;
-    }
+    return buildManualRoofGeometryFromAutoOutline(input.autoRoofOutline);
   }
 
   return buildFallbackManualRoofGeometry({
@@ -148,22 +143,6 @@ export function calculateManualRoofMeasurements(geometry: ManualRoofGeometry): M
     edgeRows,
     detail: "Area and edge lengths are derived from the manager-adjusted outline geometry.",
   };
-}
-
-function isManualGeometryUsableForDraft(geometry: ManualRoofGeometry, roofSquares: number) {
-  if (roofSquares <= 0) {
-    return true;
-  }
-
-  const geometryRoofSquares = calculateManualRoofMeasurements(geometry).roofSquares;
-
-  if (geometryRoofSquares <= 0) {
-    return true;
-  }
-
-  const disagreementPercent = (Math.abs(geometryRoofSquares - roofSquares) / roofSquares) * 100;
-
-  return disagreementPercent <= MAX_AUTO_OUTLINE_DRAFT_DISAGREEMENT_PERCENT;
 }
 
 function buildEdgeRows(facet: ManualRoofFacet, pixelSizeFeet: number): ManualRoofEdgeRow[] {

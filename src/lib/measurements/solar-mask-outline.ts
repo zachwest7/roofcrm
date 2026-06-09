@@ -30,6 +30,7 @@ type MaskRasterInput = {
   raster: ArrayLike<number>;
   threshold?: number;
   pixelSizeMeters?: number;
+  targetPoint?: RoofOutlinePoint;
 };
 
 type Component = {
@@ -51,7 +52,12 @@ export function extractAutoRoofOutlineFromMaskRaster(input: MaskRasterInput): Au
     return null;
   }
 
-  const component = findLargestComponent(roofPixels, input.width, input.height);
+  const component = selectRoofComponent(
+    findComponents(roofPixels, input.width, input.height),
+    input.width,
+    input.height,
+    input.targetPoint,
+  );
 
   if (!component || component.pixels.length < MIN_ROOF_PIXELS) {
     return null;
@@ -91,6 +97,10 @@ export async function fetchGoogleSolarMaskOutline(input: {
   maskUrl?: string;
   apiKey?: string;
   pixelSizeMeters?: number;
+  targetCoordinates?: {
+    latitude: number;
+    longitude: number;
+  };
   fetchFn?: typeof fetch;
 }): Promise<AutoRoofOutline | null> {
   const maskUrl = input.maskUrl?.trim();
@@ -111,6 +121,7 @@ export async function fetchGoogleSolarMaskOutline(input: {
   const tiff = await fromArrayBuffer(await response.arrayBuffer());
   const image = await tiff.getImage();
   const raster = await image.readRasters({ interleave: true });
+  const targetPoint = getGeoTiffTargetPoint(image, input.targetCoordinates);
 
   return extractAutoRoofOutlineFromMaskRaster({
     width: image.getWidth(),
@@ -118,6 +129,7 @@ export async function fetchGoogleSolarMaskOutline(input: {
     raster,
     threshold: 0,
     pixelSizeMeters: input.pixelSizeMeters,
+    targetPoint,
   });
 }
 
@@ -175,9 +187,9 @@ function toRoofPixelSet(input: MaskRasterInput) {
   return pixels;
 }
 
-function findLargestComponent(roofPixels: Set<number>, width: number, height: number): Component | null {
+function findComponents(roofPixels: Set<number>, width: number, height: number): Component[] {
   const seen = new Set<number>();
-  let largest: Component | null = null;
+  const components: Component[] = [];
 
   for (const pixel of roofPixels) {
     if (seen.has(pixel)) {
@@ -186,12 +198,43 @@ function findLargestComponent(roofPixels: Set<number>, width: number, height: nu
 
     const component = floodFill(pixel, roofPixels, seen, width, height);
 
-    if (!largest || component.pixels.length > largest.pixels.length) {
-      largest = component;
-    }
+    components.push(component);
   }
 
-  return largest;
+  return components;
+}
+
+function selectRoofComponent(
+  components: Component[],
+  width: number,
+  height: number,
+  targetPoint?: RoofOutlinePoint,
+): Component | null {
+  if (!components.length) {
+    return null;
+  }
+
+  if (!targetPoint) {
+    return getLargestComponent(components);
+  }
+
+  const targetPixel = getPixelIndexFromPoint(targetPoint, width, height);
+  const containingComponent = components.find((component) => component.pixels.includes(targetPixel));
+
+  if (containingComponent) {
+    return containingComponent;
+  }
+
+  return components
+    .map((component) => ({
+      component,
+      distance: getPointDistance(targetPoint, getComponentCenter(component, width)),
+    }))
+    .sort((left, right) => left.distance - right.distance)[0]?.component ?? getLargestComponent(components);
+}
+
+function getLargestComponent(components: Component[]) {
+  return [...components].sort((left, right) => right.pixels.length - left.pixels.length)[0] ?? null;
 }
 
 function floodFill(
@@ -253,6 +296,104 @@ function traceBoundary(component: Component, width: number) {
   const longestLoop = loops.sort((left, right) => right.length - left.length)[0] ?? [];
 
   return simplifyOrthogonalPolygon(longestLoop);
+}
+
+function getPixelIndexFromPoint(point: RoofOutlinePoint, width: number, height: number) {
+  const x = Math.floor(clamp(point.x, 0, width - 1));
+  const y = Math.floor(clamp(point.y, 0, height - 1));
+
+  return y * width + x;
+}
+
+function getComponentCenter(component: Component, width: number): RoofOutlinePoint {
+  const total = component.pixels.reduce(
+    (sum, pixel) => ({
+      x: sum.x + (pixel % width) + 0.5,
+      y: sum.y + Math.floor(pixel / width) + 0.5,
+    }),
+    { x: 0, y: 0 },
+  );
+
+  return {
+    x: total.x / component.pixels.length,
+    y: total.y / component.pixels.length,
+  };
+}
+
+function getPointDistance(left: RoofOutlinePoint, right: RoofOutlinePoint) {
+  return Math.sqrt((left.x - right.x) ** 2 + (left.y - right.y) ** 2);
+}
+
+function getGeoTiffTargetPoint(
+  image: {
+    getWidth(): number;
+    getHeight(): number;
+    getBoundingBox(): number[];
+  },
+  targetCoordinates?: { latitude: number; longitude: number },
+): RoofOutlinePoint | undefined {
+  if (!targetCoordinates) {
+    return undefined;
+  }
+
+  let boundingBox: number[];
+
+  try {
+    boundingBox = image.getBoundingBox();
+  } catch {
+    return undefined;
+  }
+
+  const [minX, minY, maxX, maxY] = boundingBox;
+
+  if (![minX, minY, maxX, maxY].every(Number.isFinite) || minX === maxX || minY === maxY) {
+    return undefined;
+  }
+
+  const targetWorldPoint = projectCoordinatesForGeoTiff(targetCoordinates, boundingBox);
+  const x = ((targetWorldPoint.x - minX) / (maxX - minX)) * image.getWidth();
+  const y = ((maxY - targetWorldPoint.y) / (maxY - minY)) * image.getHeight();
+
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return undefined;
+  }
+
+  return {
+    x: clamp(x, 0, image.getWidth() - 1),
+    y: clamp(y, 0, image.getHeight() - 1),
+  };
+}
+
+function projectCoordinatesForGeoTiff(
+  coordinates: { latitude: number; longitude: number },
+  boundingBox: number[],
+): RoofOutlinePoint {
+  const [minX, minY, maxX, maxY] = boundingBox;
+  const looksLikeDegrees =
+    Math.max(Math.abs(minX), Math.abs(maxX)) <= 180 && Math.max(Math.abs(minY), Math.abs(maxY)) <= 90;
+
+  if (looksLikeDegrees) {
+    return {
+      x: coordinates.longitude,
+      y: coordinates.latitude,
+    };
+  }
+
+  return projectCoordinatesToWebMercator(coordinates);
+}
+
+function projectCoordinatesToWebMercator(coordinates: { latitude: number; longitude: number }): RoofOutlinePoint {
+  const earthRadiusMeters = 6_378_137;
+  const latitude = clamp(coordinates.latitude, -85.05112878, 85.05112878);
+
+  return {
+    x: earthRadiusMeters * (coordinates.longitude * Math.PI / 180),
+    y: earthRadiusMeters * Math.log(Math.tan(Math.PI / 4 + (latitude * Math.PI) / 360)),
+  };
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function buildBoundaryEdges(componentPixels: Set<number>, width: number) {

@@ -125,6 +125,10 @@ export async function fetchGoogleSolarSignals(input: {
     maskUrl?: string;
     apiKey?: string;
     pixelSizeMeters?: number;
+    targetCoordinates?: {
+      latitude: number;
+      longitude: number;
+    };
     fetchFn?: typeof fetch;
   }) => Promise<AutoRoofOutline | null>;
   rasterPreviewFetcher?: SolarRasterPreviewFetcher;
@@ -209,6 +213,10 @@ export async function fetchGoogleSolarSignals(input: {
         maskUrl: dataLayers.maskUrl,
         apiKey,
         pixelSizeMeters: GOOGLE_SOLAR_DATA_LAYER_PIXEL_SIZE_METERS,
+        targetCoordinates: {
+          latitude: input.latitude,
+          longitude: input.longitude,
+        },
         fetchFn,
       })
     : null;

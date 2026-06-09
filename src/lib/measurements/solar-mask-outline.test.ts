@@ -85,6 +85,40 @@ describe("solar mask outline", () => {
     ]);
   });
 
+  it("keeps the roof component nearest the selected target point", () => {
+    const width = 12;
+    const height = 6;
+    const mask = new Uint8Array(width * height);
+
+    for (let y = 1; y <= 4; y += 1) {
+      for (let x = 1; x <= 4; x += 1) {
+        mask[y * width + x] = 1;
+      }
+    }
+
+    for (let y = 1; y <= 2; y += 1) {
+      for (let x = 8; x <= 9; x += 1) {
+        mask[y * width + x] = 1;
+      }
+    }
+
+    const outline = extractAutoRoofOutlineFromMaskRaster({
+      width,
+      height,
+      raster: mask,
+      threshold: 0,
+      targetPoint: { x: 9, y: 2 },
+    });
+
+    expect(outline?.areaPixels).toBe(4);
+    expect(outline?.polygons[0].points).toEqual([
+      { x: 8, y: 1 },
+      { x: 10, y: 1 },
+      { x: 10, y: 3 },
+      { x: 8, y: 3 },
+    ]);
+  });
+
   it("returns null when the mask has too little roof signal", () => {
     const outline = extractAutoRoofOutlineFromMaskRaster({
       width: 6,

@@ -91,7 +91,7 @@ describe("manual roof geometry", () => {
     expect(measurements.lengthTotals.eavesAndRakesFt).toBeGreaterThan(200);
   });
 
-  it("falls back when the Solar mask outline area does not match the selected roof draft", () => {
+  it("preserves a Solar mask outline for manual trace editing", () => {
     const geometry = buildManualRoofGeometryForDraft({
       roofSquares: 15.6,
       autoRoofOutline: {
@@ -116,7 +116,7 @@ describe("manual roof geometry", () => {
       },
     });
 
-    expect(geometry.source).toBe("manual_fallback");
-    expect(calculateManualRoofMeasurements(geometry).roofSquares).toBe(15.6);
+    expect(geometry.source).toBe("google_solar_mask");
+    expect(calculateManualRoofMeasurements(geometry).roofSquares).toBe(32);
   });
 });
