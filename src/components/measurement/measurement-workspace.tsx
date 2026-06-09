@@ -45,9 +45,11 @@ import {
   type RoofSegmentMeasurement,
 } from "@/lib/measurements/draft-provider";
 import {
+  assessManualTraceQuality,
   buildManualRoofGeometryForDraft,
   calculateManualRoofMeasurements,
   replaceManualRoofGeometryPoint,
+  type ManualTraceQuality,
   type ManualRoofGeometry,
   type ManualRoofMeasurements,
 } from "@/lib/measurements/manual-geometry";
@@ -71,10 +73,7 @@ import {
   type SourceDiagnosticStatus,
 } from "@/lib/measurements/source-diagnostics";
 import type { LatLng, MeasurementSourceReadiness } from "@/lib/measurements/source-stack";
-import {
-  getGoogleStaticMapTapTargetCoordinates,
-  getMetricRasterTapTargetCoordinates,
-} from "@/lib/measurements/static-map-target";
+import { getGoogleStaticMapTapTargetCoordinates } from "@/lib/measurements/static-map-target";
 import { formatApprovedMeasurementSummary } from "@/lib/measurements/summary";
 import { createSavedJobSummary, sortSavedJobSummaries } from "@/lib/workflow/saved-jobs";
 import { applyPropertyTargetChange } from "@/lib/workflow/target-change";
@@ -173,6 +172,14 @@ export function MeasurementWorkspace({
 
   const facets = useMemo(() => buildFacetRows(snapshot.draft), [snapshot.draft]);
   const manualMeasurements = useMemo(() => calculateManualRoofMeasurements(manualGeometry), [manualGeometry]);
+  const manualTraceQuality = useMemo(
+    () =>
+      assessManualTraceQuality({
+        draftRoofSquares: snapshot.draft.roofSquares,
+        tracedRoofSquares: manualMeasurements.roofSquares,
+      }),
+    [manualMeasurements.roofSquares, snapshot.draft.roofSquares],
+  );
   const sourceDiagnostics = useMemo(
     () =>
       buildSourceDiagnostics({
@@ -333,6 +340,10 @@ export function MeasurementWorkspace({
   }
 
   function handleApplyManualGeometry() {
+    if (!manualTraceQuality.canApply) {
+      return;
+    }
+
     setApprovalDraft((current) => ({
       ...current,
       approvedRoofSquares: manualMeasurements.roofSquares,
@@ -543,6 +554,7 @@ export function MeasurementWorkspace({
               <ManualGeometryMeasurementsPanel
                 measurements={manualMeasurements}
                 editorMode={outlineEditorMode}
+                traceQuality={manualTraceQuality}
                 onApply={handleApplyManualGeometry}
                 applied={approvalDraft.manualMeasurements === manualMeasurements}
               />
@@ -1524,8 +1536,7 @@ function ManualGeometryCanvas({
       ? rasterPreview.imageDataUrl
       : null;
   const editTraceBackgroundImageUrl = solarRasterImageUrl ?? satelliteImageUrl;
-  const canUseSolarRasterTarget = Boolean(centerCoordinates && solarRasterImageUrl && geometry.pixelSizeFeet > 0);
-  const canSelectTarget = Boolean(centerCoordinates && (canUseSolarRasterTarget || satelliteImageUrl));
+  const canSelectTarget = Boolean(centerCoordinates && satelliteImageUrl);
 
   function handlePointerMove(event: React.PointerEvent<SVGSVGElement>) {
     if (!activePoint) {
@@ -1556,22 +1567,6 @@ function ManualGeometryCanvas({
       x: event.clientX - rect.left,
       y: event.clientY - rect.top,
     };
-
-    if (canUseSolarRasterTarget) {
-      onSelectTarget(
-        getMetricRasterTapTargetCoordinates({
-          center: centerCoordinates,
-          imageSize: {
-            width: geometry.imageWidth,
-            height: geometry.imageHeight,
-          },
-          renderedSize,
-          pixelSizeFeet: geometry.pixelSizeFeet,
-          tap,
-        }),
-      );
-      return;
-    }
 
     onSelectTarget(
       getGoogleStaticMapTapTargetCoordinates({
@@ -1627,20 +1622,7 @@ function ManualGeometryCanvas({
             disabled={!canSelectTarget}
             aria-label="Select a different roof target from the satellite image"
           >
-            {canUseSolarRasterTarget ? (
-              <svg
-                className="absolute inset-0 h-full w-full"
-                viewBox={`0 0 ${geometry.imageWidth} ${geometry.imageHeight}`}
-                aria-hidden="true"
-              >
-                <image
-                  href={solarRasterImageUrl ?? undefined}
-                  width={geometry.imageWidth}
-                  height={geometry.imageHeight}
-                  preserveAspectRatio="none"
-                />
-              </svg>
-            ) : satelliteImageUrl ? (
+            {satelliteImageUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={satelliteImageUrl}
@@ -1658,9 +1640,7 @@ function ManualGeometryCanvas({
             ) : null}
             <div className="absolute bottom-3 left-3 max-w-[calc(100%-1.5rem)] rounded-md bg-black/65 px-3 py-2 text-xs leading-5 text-slate-100">
               {canSelectTarget
-                ? canUseSolarRasterTarget
-                  ? "Select the correct roof in this same trace view, then get a fresh snapshot."
-                  : "Select the roof target here, then get a fresh snapshot."
+                ? "Tap the correct roof on the satellite image, then get a fresh snapshot."
                 : "Satellite target unavailable for this address."}
             </div>
           </button>
@@ -1741,30 +1721,43 @@ function ManualGeometryCanvas({
 function ManualGeometryMeasurementsPanel({
   measurements,
   editorMode,
+  traceQuality,
   onApply,
   applied,
 }: {
   measurements: ManualRoofMeasurements;
   editorMode: OutlineEditorMode;
+  traceQuality: ManualTraceQuality;
   onApply: () => void;
   applied: boolean;
 }) {
   const isChangingHouse = editorMode === "change_house";
+  const canApplyTrace = !isChangingHouse && traceQuality.canApply;
+  const traceBadgeVariant =
+    traceQuality.status === "blocked" ? "destructive" : traceQuality.status === "review" ? "outline" : "secondary";
 
   return (
     <div className="space-y-3">
       <div className="rounded-lg border bg-slate-50 p-4">
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-medium text-slate-950">Traced measurements</p>
-          <Badge variant={applied && !isChangingHouse ? "default" : "secondary"}>
-            {isChangingHouse ? "Target mode" : applied ? "Applied" : "Draft trace"}
+          <Badge variant={isChangingHouse ? "secondary" : applied ? "default" : traceBadgeVariant}>
+            {isChangingHouse ? "Target mode" : applied ? "Applied" : traceQuality.label}
           </Badge>
         </div>
         {isChangingHouse ? (
           <p className="mt-2 text-xs leading-5 text-slate-600">
             Changing houses clears this trace before the next snapshot.
           </p>
-        ) : null}
+        ) : (
+          <p
+            className={`mt-2 text-xs leading-5 ${
+              traceQuality.status === "blocked" ? "text-red-700" : "text-slate-600"
+            }`}
+          >
+            {traceQuality.detail}
+          </p>
+        )}
         <div className="mt-3 space-y-2 text-sm">
           <SummaryRow label="Area" value={`${measurements.areaSqft.toLocaleString()} sqft`} />
           <SummaryRow label="Squares" value={`${measurements.roofSquares.toFixed(1)} sq`} />
@@ -1774,7 +1767,7 @@ function ManualGeometryMeasurementsPanel({
           <SummaryRow label="Ridges" value={formatFeetAndInches(measurements.lengthTotals.ridgesFt)} />
           <SummaryRow label="Valleys" value={formatFeetAndInches(measurements.lengthTotals.valleysFt)} />
         </div>
-        <Button className="mt-4 w-full gap-2" onClick={onApply} disabled={isChangingHouse}>
+        <Button className="mt-4 w-full gap-2" onClick={onApply} disabled={!canApplyTrace}>
           <ClipboardCheck className="size-4" />
           Apply Trace To Approval
         </Button>

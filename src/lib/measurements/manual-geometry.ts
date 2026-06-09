@@ -38,7 +38,20 @@ export type ManualRoofMeasurements = {
   detail: string;
 };
 
+export type ManualTraceQualityStatus = "ready" | "review" | "blocked";
+
+export type ManualTraceQuality = {
+  status: ManualTraceQualityStatus;
+  canApply: boolean;
+  label: string;
+  detail: string;
+  disagreementPercent: number;
+};
+
 const METERS_TO_FEET = 3.280839895;
+const REVIEW_TRACE_DISAGREEMENT_PERCENT = 25;
+const BLOCK_TRACE_DISAGREEMENT_PERCENT = 60;
+const MIN_TRACE_ROOF_SQUARES = 3;
 
 export function buildManualRoofGeometryForDraft(input: {
   roofSquares: number;
@@ -145,6 +158,56 @@ export function calculateManualRoofMeasurements(geometry: ManualRoofGeometry): M
   };
 }
 
+export function assessManualTraceQuality(input: {
+  draftRoofSquares: number;
+  tracedRoofSquares: number;
+}): ManualTraceQuality {
+  const draftRoofSquares = Math.max(0, input.draftRoofSquares);
+  const tracedRoofSquares = Math.max(0, input.tracedRoofSquares);
+  const disagreementPercent = calculateDisagreementPercent(draftRoofSquares, tracedRoofSquares);
+
+  if (!tracedRoofSquares) {
+    return {
+      status: "blocked",
+      canApply: false,
+      label: "Trace incomplete",
+      detail: "Draw or adjust the roof trace before applying it to the approval inputs.",
+      disagreementPercent,
+    };
+  }
+
+  if (
+    (draftRoofSquares >= MIN_TRACE_ROOF_SQUARES && tracedRoofSquares < MIN_TRACE_ROOF_SQUARES) ||
+    disagreementPercent >= BLOCK_TRACE_DISAGREEMENT_PERCENT
+  ) {
+    return {
+      status: "blocked",
+      canApply: false,
+      label: "Trace mismatch",
+      detail: `Trace is ${Math.round(disagreementPercent)}% different from the draft. Adjust the outline before applying it, or type the roof squares manually.`,
+      disagreementPercent,
+    };
+  }
+
+  if (disagreementPercent >= REVIEW_TRACE_DISAGREEMENT_PERCENT) {
+    return {
+      status: "review",
+      canApply: true,
+      label: "Review trace",
+      detail: `Trace is ${Math.round(disagreementPercent)}% different from the draft. Apply only if the outline is visibly on the correct roof.`,
+      disagreementPercent,
+    };
+  }
+
+  return {
+    status: "ready",
+    canApply: true,
+    label: "Trace ready",
+    detail: "Trace agrees with the draft closely enough to apply to the approval inputs.",
+    disagreementPercent,
+  };
+}
+
 function buildEdgeRows(facet: ManualRoofFacet, pixelSizeFeet: number): ManualRoofEdgeRow[] {
   return facet.points.map((point, index) => {
     const next = facet.points[(index + 1) % facet.points.length];
@@ -210,6 +273,16 @@ function sumEdges(edgeRows: ManualRoofEdgeRow[], type: ManualRoofEdgeType) {
       .filter((row) => row.type === type)
       .reduce((total, row) => total + row.lengthFt, 0),
   );
+}
+
+function calculateDisagreementPercent(draftRoofSquares: number, tracedRoofSquares: number) {
+  const baseline = Math.max(draftRoofSquares, tracedRoofSquares);
+
+  if (!baseline) {
+    return 100;
+  }
+
+  return roundToTenth((Math.abs(draftRoofSquares - tracedRoofSquares) / baseline) * 100);
 }
 
 function getPolygonAreaPixels(points: RoofOutlinePoint[]) {

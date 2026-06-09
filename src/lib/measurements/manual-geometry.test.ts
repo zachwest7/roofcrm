@@ -5,6 +5,7 @@ import {
   buildManualRoofGeometryForDraft,
   buildManualRoofGeometryFromAutoOutline,
   calculateManualRoofMeasurements,
+  assessManualTraceQuality,
   replaceManualRoofGeometryPoint,
 } from "./manual-geometry";
 import type { AutoRoofOutline } from "./solar-mask-outline";
@@ -118,5 +119,33 @@ describe("manual roof geometry", () => {
 
     expect(geometry.source).toBe("google_solar_mask");
     expect(calculateManualRoofMeasurements(geometry).roofSquares).toBe(32);
+  });
+
+  it("blocks applying a traced Solar outline when it is wildly smaller than the draft", () => {
+    const quality = assessManualTraceQuality({
+      draftRoofSquares: 15.6,
+      tracedRoofSquares: 0.8,
+    });
+
+    expect(quality).toMatchObject({
+      status: "blocked",
+      canApply: false,
+      label: "Trace mismatch",
+    });
+    expect(quality.disagreementPercent).toBeGreaterThan(90);
+  });
+
+  it("allows applying a traced outline when it agrees with the draft within review tolerance", () => {
+    const quality = assessManualTraceQuality({
+      draftRoofSquares: 15.6,
+      tracedRoofSquares: 14.8,
+    });
+
+    expect(quality).toMatchObject({
+      status: "ready",
+      canApply: true,
+      label: "Trace ready",
+    });
+    expect(quality.disagreementPercent).toBeLessThan(10);
   });
 });
