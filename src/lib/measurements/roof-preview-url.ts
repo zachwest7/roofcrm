@@ -16,11 +16,6 @@ export function buildGoogleSatelliteRoofPreviewUrl(input: {
   zoom?: number;
 }) {
   const apiKey = input.apiKey?.trim();
-
-  if (!apiKey) {
-    return null;
-  }
-
   const center = getPreviewCenter(input.propertyMatch, input.fallbackAddress);
 
   if (!center) {
@@ -34,8 +29,13 @@ export function buildGoogleSatelliteRoofPreviewUrl(input: {
     scale: "2",
     maptype: "satellite",
     format: "jpg",
-    key: apiKey,
   });
+
+  if (!apiKey) {
+    return `/api/maps/static?${params.toString()}`;
+  }
+
+  params.set("key", apiKey);
 
   return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
 }

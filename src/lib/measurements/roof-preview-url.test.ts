@@ -66,8 +66,8 @@ describe("buildGoogleSatelliteRoofPreviewUrl", () => {
     expect(url.searchParams.get("zoom")).toBe("21");
   });
 
-  it("does not build a public image url without a browser key", () => {
-    expect(
+  it("builds a server-proxied image url without a browser key", () => {
+    const url = new URL(
       buildGoogleSatelliteRoofPreviewUrl({
         apiKey: "",
         propertyMatch: {
@@ -76,8 +76,15 @@ describe("buildGoogleSatelliteRoofPreviewUrl", () => {
           detail: "Typed address has not been matched to a property yet.",
         },
         fallbackAddress: "123 Cypress Point Dr, Boca Raton, FL",
-      }),
-    ).toBeNull();
+      }) ?? "",
+      "https://roofcrm.example",
+    );
+
+    expect(url.origin).toBe("https://roofcrm.example");
+    expect(url.pathname).toBe("/api/maps/static");
+    expect(url.searchParams.get("center")).toBe("123 Cypress Point Dr, Boca Raton, FL");
+    expect(url.searchParams.get("maptype")).toBe("satellite");
+    expect(url.searchParams.has("key")).toBe(false);
   });
 
   it("returns center coordinates only when the property match has lat/lng", () => {
