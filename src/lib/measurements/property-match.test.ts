@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   createGooglePlacesPropertyMatch,
+  createManuallyAdjustedPropertyMatch,
+  createManuallySelectedPropertyTarget,
   createTypedOnlyPropertyMatch,
   mapAddressValidationResponseToPropertyMatch,
 } from "./property-match";
@@ -84,5 +86,110 @@ describe("property match", () => {
 
     expect(match.status).toBe("typed_only");
     expect(match.source).toBe("manual");
+  });
+
+  it("nudges a selected target left so the reviewer can correct a neighboring property", () => {
+    const selected = createGooglePlacesPropertyMatch({
+      formattedAddress: "19024 Test St",
+      placeId: "place-19024",
+      latitude: 26.391234,
+      longitude: -80.083456,
+      checkedAt: "2026-06-08T12:00:00.000Z",
+    });
+
+    const adjusted = createManuallyAdjustedPropertyMatch(selected, {
+      direction: "left",
+      distanceFeet: 40,
+      checkedAt: "2026-06-08T12:30:00.000Z",
+    });
+
+    expect(adjusted.status).toBe("needs_confirmation");
+    expect(adjusted.source).toBe("manual");
+    expect(adjusted.formattedAddress).toBe("19024 Test St");
+    expect(adjusted.placeId).toBe("place-19024");
+    expect(adjusted.latitude).toBeCloseTo(26.391234, 6);
+    expect(adjusted.longitude).toBeLessThan(selected.longitude ?? 0);
+    expect(adjusted.targetCorrection).toMatchObject({
+      direction: "left",
+      distanceFeet: 40,
+      totalEastFeet: -40,
+      totalNorthFeet: 0,
+    });
+  });
+
+  it("keeps a manually corrected target when address validation returns the original geocode", () => {
+    const adjusted = createManuallyAdjustedPropertyMatch(
+      createGooglePlacesPropertyMatch({
+        formattedAddress: "19024 Test St",
+        latitude: 26.391234,
+        longitude: -80.083456,
+      }),
+      {
+        direction: "left",
+        distanceFeet: 40,
+        checkedAt: "2026-06-08T12:30:00.000Z",
+      },
+    );
+
+    const validated = mapAddressValidationResponseToPropertyMatch(
+      {
+        result: {
+          verdict: {
+            validationGranularity: "PREMISE",
+            geocodeGranularity: "PREMISE",
+            addressComplete: true,
+            possibleNextAction: "ACCEPT",
+          },
+          address: { formattedAddress: "19024 Test St, USA" },
+          geocode: {
+            location: {
+              latitude: 26.391234,
+              longitude: -80.083456,
+            },
+            placeId: "validated-place",
+          },
+        },
+      },
+      { inputAddress: "19024 Test St", existingMatch: adjusted },
+    );
+
+    expect(validated.status).toBe("needs_confirmation");
+    expect(validated.source).toBe("manual");
+    expect(validated.latitude).toBe(adjusted.latitude);
+    expect(validated.longitude).toBe(adjusted.longitude);
+    expect(validated.targetCorrection).toEqual(adjusted.targetCorrection);
+    expect(validated.detail).toContain("Manually adjusted");
+  });
+
+  it("sets a manually selected map target from a satellite tap", () => {
+    const selected = createGooglePlacesPropertyMatch({
+      formattedAddress: "19024 Test St",
+      placeId: "place-19024",
+      latitude: 26.391234,
+      longitude: -80.083456,
+      checkedAt: "2026-06-08T12:00:00.000Z",
+    });
+
+    const adjusted = createManuallySelectedPropertyTarget(selected, {
+      coordinates: {
+        latitude: 26.391114,
+        longitude: -80.08385,
+      },
+      checkedAt: "2026-06-08T12:45:00.000Z",
+    });
+
+    expect(adjusted.status).toBe("needs_confirmation");
+    expect(adjusted.source).toBe("manual");
+    expect(adjusted.latitude).toBe(26.391114);
+    expect(adjusted.longitude).toBe(-80.08385);
+    expect(adjusted.formattedAddress).toBe("19024 Test St");
+    expect(adjusted.placeId).toBe("place-19024");
+    expect(adjusted.detail).toContain("selected on the satellite map");
+    expect(adjusted.targetCorrection).toMatchObject({
+      method: "map_tap",
+      totalEastFeet: expect.any(Number),
+      totalNorthFeet: expect.any(Number),
+      correctedAt: "2026-06-08T12:45:00.000Z",
+    });
   });
 });

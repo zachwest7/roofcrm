@@ -5,6 +5,7 @@ import type {
   RoofSegmentMeasurement,
 } from "./draft-provider";
 import type { ManualRoofMeasurements } from "./manual-geometry";
+import type { PropertyMatch } from "./property-match";
 import type { AutoRoofOutline } from "./solar-mask-outline";
 import type { SolarRasterPreview } from "./solar-raster-preview";
 
@@ -14,6 +15,7 @@ export type MeasurementReportInput = {
   jobNotes: string;
   reviewerName: string;
   reviewerNotes: string;
+  approvedAt?: string;
   approvedRoofSquares: number;
   approvedPitchClass: PitchClass;
   approvedWastePercent: number;
@@ -22,6 +24,7 @@ export type MeasurementReportInput = {
   includedStructures: string[];
   sourceStackQuality: string;
   accuracyBand: AccuracyBand;
+  propertyMatch?: PropertyMatch;
   roofSegments: RoofSegmentMeasurement[];
   autoRoofOutline?: AutoRoofOutline;
   solarRasterPreview?: SolarRasterPreview;
@@ -56,6 +59,11 @@ export type MeasurementReport = {
     confidenceScore: number;
     sourceStackQuality: string;
     accuracyLabel: string;
+    approvalStatusLabel: string;
+    targetStatusLabel: string;
+    targetCorrectionLabel: string;
+    targetCoordinateLabel: string;
+    disclaimer: string;
     generatedAtLabel: string;
   };
   measurements: MeasurementLengthTotals;
@@ -174,6 +182,12 @@ export function buildMeasurementReport(input: MeasurementReportInput): Measureme
       confidenceScore: input.confidenceScore,
       sourceStackQuality: input.sourceStackQuality,
       accuracyLabel: formatAccuracyBand(input.accuracyBand),
+      approvalStatusLabel: formatApprovalStatus(input.approvedAt),
+      targetStatusLabel: formatPropertyTargetStatus(input.propertyMatch),
+      targetCorrectionLabel: formatTargetCorrection(input.propertyMatch),
+      targetCoordinateLabel: formatTargetCoordinates(input.propertyMatch),
+      disclaimer:
+        "This report is a reviewed quote estimate for sales and scope review. It is not a fully automated production takeoff or final material order.",
       generatedAtLabel: formatReportDate(input.generatedAt),
     },
     measurements,
@@ -556,6 +570,57 @@ function formatAccuracyBand(band: AccuracyBand) {
   }
 
   return `+/- ${band.minPercent}-${band.maxPercent}%`;
+}
+
+function formatApprovalStatus(approvedAt?: string) {
+  return approvedAt ? `Approved ${formatReportDate(approvedAt)}` : "Draft review packet";
+}
+
+function formatPropertyTargetStatus(match?: PropertyMatch) {
+  const labels: Record<PropertyMatch["status"], string> = {
+    typed_only: "Typed address only",
+    selected_from_google: "Selected from Google",
+    validated: "Validated property",
+    needs_confirmation: "Needs confirmation",
+    validation_failed: "Validation failed",
+  };
+
+  return match ? labels[match.status] : "No property target";
+}
+
+function formatTargetCorrection(match?: PropertyMatch) {
+  const correction = match?.targetCorrection;
+
+  if (!correction) {
+    return "No manual target correction";
+  }
+
+  const method = correction.method === "map_tap" ? "Map tap" : "Nudge";
+  const offset = formatTargetOffset(correction.totalEastFeet, correction.totalNorthFeet);
+
+  return offset ? `${method}: ${offset}` : method;
+}
+
+function formatTargetOffset(totalEastFeet: number, totalNorthFeet: number) {
+  const parts = [];
+
+  if (totalEastFeet !== 0) {
+    parts.push(`${Math.abs(totalEastFeet).toFixed(0)} ft ${totalEastFeet > 0 ? "east" : "west"}`);
+  }
+
+  if (totalNorthFeet !== 0) {
+    parts.push(`${Math.abs(totalNorthFeet).toFixed(0)} ft ${totalNorthFeet > 0 ? "north" : "south"}`);
+  }
+
+  return parts.join(", ");
+}
+
+function formatTargetCoordinates(match?: PropertyMatch) {
+  if (typeof match?.latitude !== "number" || typeof match.longitude !== "number") {
+    return "Coordinates unavailable";
+  }
+
+  return `${match.latitude.toFixed(6)}, ${match.longitude.toFixed(6)}`;
 }
 
 function formatReportDate(value: string) {

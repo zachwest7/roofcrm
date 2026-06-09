@@ -5,12 +5,15 @@ export const GOOGLE_SATELLITE_PREVIEW = {
   width: 640,
   height: 420,
   zoom: 20,
+  minZoom: 18,
+  maxZoom: 21,
 };
 
 export function buildGoogleSatelliteRoofPreviewUrl(input: {
   apiKey?: string;
   propertyMatch?: PropertyMatch;
   fallbackAddress: string;
+  zoom?: number;
 }) {
   const apiKey = input.apiKey?.trim();
 
@@ -26,7 +29,7 @@ export function buildGoogleSatelliteRoofPreviewUrl(input: {
 
   const params = new URLSearchParams({
     center,
-    zoom: String(GOOGLE_SATELLITE_PREVIEW.zoom),
+    zoom: String(normalizeGoogleSatellitePreviewZoom(input.zoom)),
     size: `${GOOGLE_SATELLITE_PREVIEW.width}x${GOOGLE_SATELLITE_PREVIEW.height}`,
     scale: "2",
     maptype: "satellite",
@@ -35,6 +38,17 @@ export function buildGoogleSatelliteRoofPreviewUrl(input: {
   });
 
   return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
+}
+
+export function normalizeGoogleSatellitePreviewZoom(zoom?: number) {
+  if (typeof zoom !== "number" || !Number.isFinite(zoom)) {
+    return GOOGLE_SATELLITE_PREVIEW.zoom;
+  }
+
+  return Math.min(
+    GOOGLE_SATELLITE_PREVIEW.maxZoom,
+    Math.max(GOOGLE_SATELLITE_PREVIEW.minZoom, Math.round(zoom)),
+  );
 }
 
 export function getGoogleSatellitePreviewCenterCoordinates(propertyMatch?: PropertyMatch): LatLng | undefined {

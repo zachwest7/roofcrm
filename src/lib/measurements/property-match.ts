@@ -8,6 +8,16 @@ export type PropertyMatchStatus =
   | "validation_failed";
 
 export type PropertyMatchSource = "manual" | "google_places" | "google_address_validation";
+export type PropertyTargetAdjustmentDirection = "left" | "right" | "up" | "down";
+
+export type PropertyTargetCorrection = {
+  method?: "nudge" | "map_tap";
+  direction: PropertyTargetAdjustmentDirection;
+  distanceFeet: number;
+  totalEastFeet: number;
+  totalNorthFeet: number;
+  correctedAt: string;
+};
 
 export type PropertyMatch = {
   status: PropertyMatchStatus;
@@ -22,6 +32,7 @@ export type PropertyMatch = {
   possibleNextAction?: string;
   detail: string;
   checkedAt?: string;
+  targetCorrection?: PropertyTargetCorrection;
 };
 
 export type GooglePlacesPropertySelection = {
@@ -29,6 +40,20 @@ export type GooglePlacesPropertySelection = {
   placeId?: string;
   latitude?: number;
   longitude?: number;
+  checkedAt?: string;
+};
+
+export type ManualPropertyTargetAdjustment = {
+  direction: PropertyTargetAdjustmentDirection;
+  distanceFeet: number;
+  checkedAt?: string;
+};
+
+export type ManualPropertyTargetSelection = {
+  coordinates: {
+    latitude: number;
+    longitude: number;
+  };
   checkedAt?: string;
 };
 
@@ -86,6 +111,98 @@ export function createGooglePlacesPropertyMatch(selection: GooglePlacesPropertyS
   };
 }
 
+export function createManuallyAdjustedPropertyMatch(
+  match: PropertyMatch,
+  adjustment: ManualPropertyTargetAdjustment,
+): PropertyMatch {
+  if (typeof match.latitude !== "number" || typeof match.longitude !== "number") {
+    return {
+      ...match,
+      status: "needs_confirmation",
+      source: "manual",
+      detail: "Cannot manually adjust the roof target until this address has map coordinates.",
+      checkedAt: adjustment.checkedAt ?? new Date().toISOString(),
+    };
+  }
+
+  const checkedAt = adjustment.checkedAt ?? new Date().toISOString();
+  const eastFeet = getEastFeet(adjustment.direction, adjustment.distanceFeet);
+  const northFeet = getNorthFeet(adjustment.direction, adjustment.distanceFeet);
+  const previousCorrection = match.targetCorrection;
+  const totalEastFeet = roundFeet((previousCorrection?.totalEastFeet ?? 0) + eastFeet);
+  const totalNorthFeet = roundFeet((previousCorrection?.totalNorthFeet ?? 0) + northFeet);
+  const shiftedCoordinates = shiftCoordinatesByFeet(
+    {
+      latitude: match.latitude,
+      longitude: match.longitude,
+    },
+    { eastFeet, northFeet },
+  );
+
+  return {
+    ...match,
+    status: "needs_confirmation",
+    source: "manual",
+    latitude: shiftedCoordinates.latitude,
+    longitude: shiftedCoordinates.longitude,
+    detail: `Manually adjusted roof target ${formatAdjustmentDistance(adjustment.distanceFeet)} ${formatDirection(
+      adjustment.direction,
+    )}. Confirm this is the correct structure before quote approval.`,
+    checkedAt,
+    targetCorrection: {
+      method: "nudge",
+      direction: adjustment.direction,
+      distanceFeet: adjustment.distanceFeet,
+      totalEastFeet,
+      totalNorthFeet,
+      correctedAt: checkedAt,
+    },
+  };
+}
+
+export function createManuallySelectedPropertyTarget(
+  match: PropertyMatch,
+  selection: ManualPropertyTargetSelection,
+): PropertyMatch {
+  if (typeof match.latitude !== "number" || typeof match.longitude !== "number") {
+    return {
+      ...match,
+      status: "needs_confirmation",
+      source: "manual",
+      detail: "Cannot select a roof target from the map until this address has map coordinates.",
+      checkedAt: selection.checkedAt ?? new Date().toISOString(),
+    };
+  }
+
+  const checkedAt = selection.checkedAt ?? new Date().toISOString();
+  const eastFeet = roundFeet(
+    (selection.coordinates.longitude - match.longitude) * feetPerLongitudeDegree(match.latitude),
+  );
+  const northFeet = roundFeet((selection.coordinates.latitude - match.latitude) * feetPerLatitudeDegree());
+  const previousCorrection = match.targetCorrection;
+  const totalEastFeet = roundFeet((previousCorrection?.totalEastFeet ?? 0) + eastFeet);
+  const totalNorthFeet = roundFeet((previousCorrection?.totalNorthFeet ?? 0) + northFeet);
+  const distanceFeet = roundFeet(Math.hypot(eastFeet, northFeet));
+
+  return {
+    ...match,
+    status: "needs_confirmation",
+    source: "manual",
+    latitude: roundCoordinate(selection.coordinates.latitude),
+    longitude: roundCoordinate(selection.coordinates.longitude),
+    detail: "Roof target was manually selected on the satellite map. Confirm this is the correct structure before quote approval.",
+    checkedAt,
+    targetCorrection: {
+      method: "map_tap",
+      direction: getDominantDirection(eastFeet, northFeet),
+      distanceFeet,
+      totalEastFeet,
+      totalNorthFeet,
+      correctedAt: checkedAt,
+    },
+  };
+}
+
 export function mapAddressValidationResponseToPropertyMatch(
   response: GoogleAddressValidationResponse,
   fallback: { inputAddress: string; existingMatch?: PropertyMatch },
@@ -100,17 +217,24 @@ export function mapAddressValidationResponseToPropertyMatch(
     response.result?.address?.formattedAddress ??
     fallback.existingMatch?.formattedAddress ??
     fallback.inputAddress;
-  const latitude = response.result?.geocode?.location?.latitude ?? fallback.existingMatch?.latitude;
-  const longitude = response.result?.geocode?.location?.longitude ?? fallback.existingMatch?.longitude;
+  const hasManualTargetCorrection = Boolean(fallback.existingMatch?.targetCorrection);
+  const latitude = hasManualTargetCorrection
+    ? fallback.existingMatch?.latitude
+    : response.result?.geocode?.location?.latitude ?? fallback.existingMatch?.latitude;
+  const longitude = hasManualTargetCorrection
+    ? fallback.existingMatch?.longitude
+    : response.result?.geocode?.location?.longitude ?? fallback.existingMatch?.longitude;
   const placeId = response.result?.geocode?.placeId ?? fallback.existingMatch?.placeId;
   const preciseMatch = Boolean(validationGranularity && PRECISE_GRANULARITIES.has(validationGranularity));
   const accepted = possibleNextAction === "ACCEPT" || !possibleNextAction;
   const status: PropertyMatchStatus =
-    preciseMatch && addressComplete && !hasUnconfirmedComponents && accepted ? "validated" : "needs_confirmation";
+    preciseMatch && addressComplete && !hasUnconfirmedComponents && accepted && !hasManualTargetCorrection
+      ? "validated"
+      : "needs_confirmation";
 
   return {
     status,
-    source: "google_address_validation",
+    source: hasManualTargetCorrection ? "manual" : "google_address_validation",
     formattedAddress,
     placeId,
     latitude,
@@ -120,12 +244,17 @@ export function mapAddressValidationResponseToPropertyMatch(
     addressComplete,
     possibleNextAction,
     detail:
-      status === "validated"
+      hasManualTargetCorrection
+        ? `Manually adjusted roof target after address validation${
+            validationGranularity ? ` (${formatGranularity(validationGranularity)} granularity)` : ""
+          }.`
+        : status === "validated"
         ? `Validated at ${formatGranularity(validationGranularity)} granularity.`
         : `Address match needs manager confirmation${
             validationGranularity ? ` (${formatGranularity(validationGranularity)} granularity)` : ""
           }.`,
     checkedAt: new Date().toISOString(),
+    targetCorrection: fallback.existingMatch?.targetCorrection,
   };
 }
 
@@ -196,4 +325,80 @@ export function buildSourceSignalsFromPropertyMatch(match: PropertyMatch): Measu
 
 function formatGranularity(granularity?: string) {
   return (granularity ?? "unknown").toLowerCase().replaceAll("_", " ");
+}
+
+function shiftCoordinatesByFeet(
+  coordinates: { latitude: number; longitude: number },
+  offset: { eastFeet: number; northFeet: number },
+) {
+  const latitude = coordinates.latitude + offset.northFeet / feetPerLatitudeDegree();
+  const longitude = coordinates.longitude + offset.eastFeet / feetPerLongitudeDegree(coordinates.latitude);
+
+  return {
+    latitude: roundCoordinate(latitude),
+    longitude: roundCoordinate(longitude),
+  };
+}
+
+function getEastFeet(direction: PropertyTargetAdjustmentDirection, distanceFeet: number) {
+  if (direction === "left") {
+    return -distanceFeet;
+  }
+
+  if (direction === "right") {
+    return distanceFeet;
+  }
+
+  return 0;
+}
+
+function getNorthFeet(direction: PropertyTargetAdjustmentDirection, distanceFeet: number) {
+  if (direction === "up") {
+    return distanceFeet;
+  }
+
+  if (direction === "down") {
+    return -distanceFeet;
+  }
+
+  return 0;
+}
+
+function feetPerLatitudeDegree() {
+  return 364_000;
+}
+
+function feetPerLongitudeDegree(latitude: number) {
+  return Math.cos((latitude * Math.PI) / 180) * feetPerLatitudeDegree();
+}
+
+function roundCoordinate(value: number) {
+  return Math.round(value * 10_000_000) / 10_000_000;
+}
+
+function roundFeet(value: number) {
+  return Math.round(value * 10) / 10;
+}
+
+function formatAdjustmentDistance(distanceFeet: number) {
+  return `${roundFeet(distanceFeet)} ft`;
+}
+
+function formatDirection(direction: PropertyTargetAdjustmentDirection) {
+  const labels: Record<PropertyTargetAdjustmentDirection, string> = {
+    left: "west",
+    right: "east",
+    up: "north",
+    down: "south",
+  };
+
+  return labels[direction];
+}
+
+function getDominantDirection(eastFeet: number, northFeet: number): PropertyTargetAdjustmentDirection {
+  if (Math.abs(eastFeet) >= Math.abs(northFeet)) {
+    return eastFeet >= 0 ? "right" : "left";
+  }
+
+  return northFeet >= 0 ? "up" : "down";
 }

@@ -46,6 +46,26 @@ describe("buildGoogleSatelliteRoofPreviewUrl", () => {
     expect(url.searchParams.get("center")).toBe("123 Cypress Point Dr, Boca Raton, FL");
   });
 
+  it("uses a caller-provided zoom level for field review controls", () => {
+    const url = new URL(
+      buildGoogleSatelliteRoofPreviewUrl({
+        apiKey: "browser-key",
+        propertyMatch: {
+          status: "selected_from_google",
+          source: "google_places",
+          formattedAddress: "123 Cypress Point Dr, Boca Raton, FL",
+          latitude: 26.3912345,
+          longitude: -80.0834567,
+          detail: "Selected from Google Places.",
+        },
+        fallbackAddress: "123 Cypress Point Dr, Boca Raton, FL",
+        zoom: 21,
+      }) ?? "",
+    );
+
+    expect(url.searchParams.get("zoom")).toBe("21");
+  });
+
   it("does not build a public image url without a browser key", () => {
     expect(
       buildGoogleSatelliteRoofPreviewUrl({

@@ -36,6 +36,7 @@ describe("measurement report", () => {
       jobNotes: "Rear flat section and attached garage.",
       reviewerName: "Zach",
       reviewerNotes: "Adjusted garage after satellite review.",
+      approvedAt: "2026-06-07T20:20:00.000Z",
       approvedRoofSquares: 28.4,
       approvedPitchClass: "medium",
       approvedWastePercent: 13,
@@ -44,6 +45,22 @@ describe("measurement report", () => {
       includedStructures: ["main roof", "attached garage"],
       sourceStackQuality: "solar_backed",
       accuracyBand: { minPercent: 3, maxPercent: 8 },
+      propertyMatch: {
+        status: "needs_confirmation",
+        source: "manual",
+        formattedAddress: "123 Cypress Point Dr, Boca Raton, FL",
+        latitude: 26.391234,
+        longitude: -80.083456,
+        detail: "Roof target was manually selected on the satellite map.",
+        targetCorrection: {
+          method: "map_tap",
+          direction: "left",
+          distanceFeet: 42,
+          totalEastFeet: -40,
+          totalNorthFeet: 12,
+          correctedAt: "2026-06-07T20:18:00.000Z",
+        },
+      },
       roofSegments: [
         {
           id: "solar-a",
@@ -128,6 +145,10 @@ describe("measurement report", () => {
     });
 
     expect(report.cover.totalRoofAreaSqft).toBe(2840);
+    expect(report.cover.approvalStatusLabel).toBe("Approved Jun 7, 2026, 4:20 PM");
+    expect(report.cover.targetStatusLabel).toBe("Needs confirmation");
+    expect(report.cover.targetCorrectionLabel).toBe("Map tap: 40 ft west, 12 ft north");
+    expect(report.cover.disclaimer).toContain("reviewed quote estimate");
     expect(report.cover.totalFacets).toBe(2);
     expect(report.cover.autoOutlinePolygons).toBe(1);
     expect(report.sourceRows).toEqual(

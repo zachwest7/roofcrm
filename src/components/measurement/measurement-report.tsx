@@ -58,6 +58,7 @@ export function MeasurementReportView({
         jobNotes: snapshot.property.jobNotes,
         reviewerName: approvedOrDraft.reviewerName,
         reviewerNotes: approvedOrDraft.reviewerNotes,
+        approvedAt: snapshot.approval?.approvedAt,
         approvedRoofSquares: approvedOrDraft.approvedRoofSquares,
         approvedPitchClass: approvedOrDraft.approvedPitchClass,
         approvedWastePercent: approvedOrDraft.approvedWastePercent,
@@ -67,6 +68,7 @@ export function MeasurementReportView({
         manualMeasurements: approvedOrDraft.manualMeasurements,
         sourceStackQuality: snapshot.draft.sourceStackQuality,
         accuracyBand: snapshot.draft.accuracyBand,
+        propertyMatch: snapshot.property.propertyMatch,
         roofSegments: snapshot.draft.roofSegments,
         autoRoofOutline: snapshot.draft.autoRoofOutline,
         solarRasterPreview: snapshot.draft.solarRasterPreview,
@@ -255,6 +257,7 @@ function CoverPage({
           <div className="mt-9 space-y-2 text-lg leading-7 text-slate-800">
             <p>{report.cover.propertyAddress}</p>
             <p>Reviewer: {report.reviewer.name}</p>
+            <p>{report.cover.approvalStatusLabel}</p>
             <p>Generated: {report.cover.generatedAtLabel}</p>
           </div>
         </div>
@@ -283,10 +286,61 @@ function CoverPage({
           />
         ) : null}
         <div className="absolute inset-0 z-10 bg-slate-950/10" />
+        {imageUrl ? (
+          <div className="absolute left-1/2 top-1/2 z-20 size-10 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_3px_rgba(14,165,233,0.85),0_10px_24px_rgba(15,23,42,0.4)]">
+            <span className="absolute left-1/2 top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />
+          </div>
+        ) : null}
         <div className="absolute bottom-3 left-3 z-20 max-w-[calc(100%-1.5rem)] rounded bg-black/65 px-2.5 py-1.5 text-xs leading-5 text-white">
-          Satellite preview only. Measurement diagrams appear on the following report pages.
+          Target: {report.cover.targetStatusLabel}. {report.cover.targetCorrectionLabel}.
         </div>
       </div>
+
+      <div className="grid gap-4 sm:grid-cols-4">
+        <CoverMetric label="Roof area" value={`${report.cover.roofSquares.toFixed(1)} sq`} />
+        <CoverMetric label="Waste" value={`${report.wasteScenarios.find((scenario) => scenario.isRecommended)?.percent ?? 0}%`} />
+        <CoverMetric label="Pitch" value={formatPitch(report.cover.predominantPitch)} />
+        <CoverMetric label="Confidence" value={`${report.cover.confidenceScore}%`} />
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-[1fr_1fr]">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <h2 className="text-sm font-semibold uppercase tracking-normal text-slate-500">Traceable lengths</h2>
+          <div className="mt-3 space-y-2 text-sm">
+            <SummaryLine label="Eaves" value={formatFeetAndInches(report.measurements.eavesFt)} />
+            <SummaryLine label="Rakes" value={formatFeetAndInches(report.measurements.rakesFt)} />
+            <SummaryLine label="Valleys" value={formatFeetAndInches(report.measurements.valleysFt)} />
+            <SummaryLine label="Hips + ridges" value={formatFeetAndInches(report.measurements.hipsAndRidgesFt)} />
+          </div>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <h2 className="text-sm font-semibold uppercase tracking-normal text-slate-500">Review notes</h2>
+          <p className="mt-3 text-sm leading-6 text-slate-700">{report.reviewer.notes}</p>
+          <p className="mt-4 text-xs leading-5 text-slate-500">{report.cover.targetCoordinateLabel}</p>
+        </div>
+      </div>
+
+      <p className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+        {report.cover.disclaimer}
+      </p>
+    </div>
+  );
+}
+
+function CoverMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3">
+      <p className="text-xs uppercase tracking-normal text-slate-500">{label}</p>
+      <p className="mt-1 text-xl font-semibold text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+function SummaryLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-slate-600">{label}</span>
+      <span className="font-medium text-slate-950">{value}</span>
     </div>
   );
 }
